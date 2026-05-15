@@ -9,12 +9,8 @@ on:
 jobs:
   # ── Backend: lint + test ─────────────────────────────────────────────────────
   backend:
-    name: Backend (Python)
+    name: Backend (Python 3.11)
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: backend
 
     steps:
       - uses: actions/checkout@v4
@@ -27,17 +23,19 @@ jobs:
           cache-dependency-path: backend/pyproject.toml
 
       - name: Install dependencies
+        working-directory: backend
         run: pip install -e ".[dev]"
 
       - name: Ruff lint
+        working-directory: backend
         run: ruff check .
 
       - name: Black format check
+        working-directory: backend
         run: black --check .
 
       - name: Run pytest
         env:
-          # Tests use mocked DB — only real env var needed is a dummy DATABASE_URL
           DATABASE_URL: "postgresql+asyncpg://user:pass@localhost/testdb"
           ANTHROPIC_API_KEY: "sk-test-placeholder"
           ALPHA_VANTAGE_API_KEY: ""
@@ -45,37 +43,34 @@ jobs:
           MAX_OPEN_POSITIONS: "8"
           CELERY_BROKER_URL: "redis://localhost:6379/0"
           CELERY_RESULT_BACKEND: "redis://localhost:6379/1"
-        run: |
-          cd ..
-          pytest tests/ -v --tb=short
+          ENVIRONMENT: "test"
+        run: pytest tests/ -v --tb=short
 
   # ── Frontend: type-check + build ─────────────────────────────────────────────
   frontend:
-    name: Frontend (Next.js)
+    name: Frontend (Node 18)
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: frontend
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up Node 18
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "18"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: frontend
         run: npm ci
 
       - name: TypeScript type-check
+        working-directory: frontend
         run: npm run type-check
 
       - name: Build
+        working-directory: frontend
         env:
-          # Point at a dummy backend — build only checks static output
           NEXT_PUBLIC_API_URL: "http://localhost:8000"
         run: npm run build

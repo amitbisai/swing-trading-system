@@ -41,12 +41,13 @@ Mobile-first PWA frontend. No active intraday trading.
 ## Commands
 ```bash
 make dev          # start backend (port 8000) + frontend (port 3000)
-make ingest       # run EOD data ingest now  (calls python -m data.ingest)
+make ingest       # run EOD data ingest now  (python backend/jobs/ingest.py)
 make agents       # run orchestrator manually for today
-make lint         # ruff + black --check
+make test         # pytest (mocked DB — no live Supabase needed)
+make lint         # ruff check on backend/
 make fmt          # black + ruff --fix
 make install      # pip install -e ".[dev]" + npm install
-pytest            # run all tests (mocked DB, no live Supabase needed)
+make push         # git add -A → prompt for message → git push origin main
 cd frontend && npm run type-check   # TypeScript strict check
 ```
 
@@ -237,3 +238,57 @@ NEXT_PUBLIC_API_URL=http://localhost:8000    # frontend env var
 python -m scheduler.ingest_job    # fetch today's prices
 python -m agents.orchestrator     # generate today's signals
 ```
+
+## Git workflow
+
+**Golden rule: `main` is always deployable.** Railway (ingest cron) and Vercel
+(frontend) both auto-deploy on every push to `main` — a broken `main` means
+broken production.
+
+### Branch naming
+
+| Prefix | Use for |
+|---|---|
+| `feature/` | New pages, endpoints, agent capabilities |
+| `fix/` | Bug fixes |
+| `data/` | Fetcher, ingest, DB schema, Alembic migrations |
+| `agent/` | Orchestrator or any sub-agent (TA, scanner, sentiment, pattern) |
+
+```bash
+git checkout -b feature/ta-agent-rsi
+git checkout -b fix/pgbouncer-statement-cache
+git checkout -b data/add-avg-volume-column
+git checkout -b agent/pattern-engulfing-detection
+```
+
+### Standard feature flow
+
+```bash
+git checkout main && git pull origin main
+git checkout -b feature/my-feature
+# ... make changes, commit incrementally ...
+git push -u origin feature/my-feature
+# Open PR on GitHub → CI must pass → merge via GitHub UI
+```
+
+### Local merge (small changes / solo work)
+
+```bash
+git checkout main
+git merge feature/my-feature --no-ff
+git push origin main
+git branch -d feature/my-feature
+```
+
+### Quick push shortcut (hotfixes only)
+
+```bash
+make push    # git add -A → prompts for message → git push origin main
+```
+
+### CI checks (must pass before merging)
+
+- **Backend:** `ruff check` → `black --check` → `pytest` (Python 3.11)
+- **Frontend:** `tsc --noEmit` → `next build` (Node 18)
+
+See `.github/workflows/ci.yml` and `CONTRIBUTING.md` for full details.
