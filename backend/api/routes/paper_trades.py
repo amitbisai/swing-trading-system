@@ -1,0 +1,114 @@
+from datetime import datetime, timezone
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.schemas import ApiResponse, OpenTradeRequest, OpenTradeResponse, PaperTradeOut
+from db.models import PaperTrade, Suggestion
+from db.session import get_db
+from paper_trading.engine import open_trade
+from risk.position_sizing import compute_position_size
+
+router = APIRouter()
+
+
+def _to_out(r: PaperTrade) -> PaperTradeOut:
+    return PaperTradeOut(
+        id=r.id,
+        suggestion_id=r.suggestion_id,
+        symbol=r.symbol,
+        direction=r.direction,
+        entry_date=r.entry_date,
+        entry_price=r.entry_price,
+        shares=r.shares,
+        capital_at_risk=r.capital_at_risk,
+        stop_loss=r.stop_loss,
+        target_price=r.target_price,
+        exit_date=r.exit_date,
+        exit_price=r.exit_price,
+        exit_reason=r.exit_reason,
+        realized_pnl=r.realized_pnl,
+        is_open=r.is_open,
+    )
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── GET /paper-trades ─────────────────────────────────────────────────────────
+
+@router.get("/", response_model=ApiResponse[list[PaperTradeOut]])
+async def list_paper_trades(
+    status: Annotated[
+        str,
+        Query(description="open | closed | all", pattern="^(open|closed|all)$"),
+    ] = "all",
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[list[PaperTradeOut]]:
+    stmt = select(PaperTrade).order_by(PaperTrade.entry_date.desc(), PaperTrade.id.desc())
+
+    if status == "open":
+        stmt = stmt.where(PaperTrade.is_open == True)
+    elif status == "closed":
+        stmt = stmt.where(PaperTrade.is_open == False)
+
+    rows = (await db.execute(stmt)).scalars().all()
+    return ApiResponse(data=[_to_out(r) for r in rows], timestamp=_ts())
+
+
+# ── POST /paper-trades ────────────────────────────────────────────────────────
+
+@router.post("/", response_model=ApiResponse[OpenTradeResponse], status_code=201)
+async def create_paper_trade(
+    body: OpenTradeRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[OpenTradeResponse]:
+    # Validate suggestion exists
+    suggestion = await db.get(Suggestion, body.suggestion_id)
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail=f"Suggestion {body.suggestion_id} not found")
+
+    # Guard: don't open a duplicate position in the same symbol
+    existing = (await db.execute(
+        select(PaperTrade).where(
+            PaperTrade.symbol == suggestion.symbol,
+            PaperTrade.is_open == True,
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An open position already exists for {suggestion.symbol} (trade #{existing.id})",
+        )
+
+    # Auto-size if shares not provided
+    auto_sized = body.shares is None
+    if auto_sized:
+        from config import settings
+        from db.models import PortfolioSnapshot
+        snap = (await db.execute(
+            select(PortfolioSnapshot)
+            .order_by(PortfolioSnapshot.snapshot_date.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        capital = snap.total_capital if snap else settings.initial_capital
+        shares = compute_position_size(capital, suggestion.entry_price, suggestion.stop_loss)
+        if shares == 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Position size computed as 0 shares — entry/stop spread may be too narrow",
+            )
+    else:
+        shares = body.shares  # type: ignore[assignment]
+
+    trade = await open_trade(body.suggestion_id, shares)
+    if trade is None:
+        raise HTTPException(status_code=500, detail="Failed to open trade — see server logs")
+
+    return ApiResponse(
+        data=OpenTradeResponse(trade=_to_out(trade), auto_sized=auto_sized),
+        timestamp=_ts(),
+    )

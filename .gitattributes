@@ -1,0 +1,10 @@
+# Normalize line endings to LF in the repo; checkout as-is on all platforms
+* text=auto eol=lf
+
+# Force binary treatment for binary files
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.woff binary
+package-lock.json text eol=lf

@@ -1,0 +1,181 @@
+from datetime import date, datetime
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Stock(Base):
+    __tablename__ = "stocks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    tier: Mapped[str] = mapped_column(String(2), nullable=False)  # T1 | T2
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    daily_prices: Mapped[list["DailyPrice"]] = relationship(
+        "DailyPrice", back_populates="stock", foreign_keys="DailyPrice.symbol",
+        primaryjoin="Stock.symbol == DailyPrice.symbol",
+    )
+    suggestions: Mapped[list["Suggestion"]] = relationship(
+        "Suggestion", back_populates="stock", foreign_keys="Suggestion.symbol",
+        primaryjoin="Stock.symbol == Suggestion.symbol",
+    )
+
+
+class DailyPrice(Base):
+    __tablename__ = "daily_prices"
+    __table_args__ = (
+        UniqueConstraint("symbol", "price_date", name="uq_daily_prices_symbol_date"),
+        Index("ix_daily_prices_symbol_date", "symbol", "price_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(
+        String(20), ForeignKey("stocks.symbol", ondelete="CASCADE"), nullable=False
+    )
+    price_date: Mapped[date] = mapped_column(Date, nullable=False)
+    open: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    high: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    low: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    close: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    adj_close: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    stock: Mapped["Stock"] = relationship(
+        "Stock", back_populates="daily_prices", foreign_keys=[symbol]
+    )
+
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+    __table_args__ = (
+        UniqueConstraint("symbol", "as_of_date", name="uq_suggestions_symbol_date"),
+        Index("ix_suggestions_symbol_date", "symbol", "as_of_date"),
+        Index("ix_suggestions_as_of_date", "as_of_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(
+        String(20), ForeignKey("stocks.symbol", ondelete="CASCADE"), nullable=False
+    )
+    tier: Mapped[str] = mapped_column(String(2), nullable=False)
+    direction: Mapped[str] = mapped_column(String(5), nullable=False)  # LONG | SHORT
+    confidence_score: Mapped[int] = mapped_column(Integer, nullable=False)  # 0–100
+    entry_price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    target_price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    ta_score: Mapped[int] = mapped_column(Integer, nullable=False)          # 0–100
+    sentiment_score: Mapped[int] = mapped_column(Integer, nullable=False)   # 0–100
+    pattern_score: Mapped[int] = mapped_column(Integer, nullable=False)     # 0–100
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    stock: Mapped["Stock"] = relationship(
+        "Stock", back_populates="suggestions", foreign_keys=[symbol]
+    )
+    paper_trades: Mapped[list["PaperTrade"]] = relationship(
+        "PaperTrade", back_populates="suggestion"
+    )
+
+
+class PaperTrade(Base):
+    __tablename__ = "paper_trades"
+    __table_args__ = (
+        Index("ix_paper_trades_symbol", "symbol"),
+        Index("ix_paper_trades_is_open", "is_open"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    suggestion_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("suggestions.id", ondelete="RESTRICT"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    direction: Mapped[str] = mapped_column(String(5), nullable=False)  # LONG | SHORT
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    shares: Mapped[int] = mapped_column(Integer, nullable=False)
+    capital_at_risk: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)  # entry_price * shares
+    stop_loss: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    target_price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(
+        String(20), nullable=True  # STOP_HIT | TARGET_HIT | MANUAL | EXPIRED
+    )
+    realized_pnl: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    is_open: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    suggestion: Mapped["Suggestion"] = relationship(
+        "Suggestion", back_populates="paper_trades"
+    )
+    daily_pnl: Mapped[list["DailyPnL"]] = relationship(
+        "DailyPnL", back_populates="trade"
+    )
+
+
+class DailyPnL(Base):
+    __tablename__ = "daily_pnl"
+    __table_args__ = (
+        UniqueConstraint("trade_id", "pnl_date", name="uq_daily_pnl_trade_date"),
+        Index("ix_daily_pnl_trade_date", "trade_id", "pnl_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("paper_trades.id", ondelete="CASCADE"), nullable=False
+    )
+    pnl_date: Mapped[date] = mapped_column(Date, nullable=False)
+    close_price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)  # EOD price used for MTM
+    unrealized_pnl: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+
+    trade: Mapped["PaperTrade"] = relationship(
+        "PaperTrade", back_populates="daily_pnl"
+    )
+
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+    __table_args__ = (UniqueConstraint("snapshot_date", name="uq_portfolio_snapshot_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    total_capital: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    cash_balance: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    invested_capital: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    unrealized_pnl: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    realized_pnl_today: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    cumulative_realized_pnl: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    open_positions: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

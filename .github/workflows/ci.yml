@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── Backend: lint + test ─────────────────────────────────────────────────────
+  backend:
+    name: Backend (Python)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Black format check
+        run: black --check .
+
+      - name: Run pytest
+        env:
+          # Tests use mocked DB — only real env var needed is a dummy DATABASE_URL
+          DATABASE_URL: "postgresql+asyncpg://user:pass@localhost/testdb"
+          ANTHROPIC_API_KEY: "sk-test-placeholder"
+          ALPHA_VANTAGE_API_KEY: ""
+          INITIAL_CAPITAL: "100000"
+          MAX_OPEN_POSITIONS: "8"
+          CELERY_BROKER_URL: "redis://localhost:6379/0"
+          CELERY_RESULT_BACKEND: "redis://localhost:6379/1"
+        run: |
+          cd ..
+          pytest tests/ -v --tb=short
+
+  # ── Frontend: type-check + build ─────────────────────────────────────────────
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npm run type-check
+
+      - name: Build
+        env:
+          # Point at a dummy backend — build only checks static output
+          NEXT_PUBLIC_API_URL: "http://localhost:8000"
+        run: npm run build
