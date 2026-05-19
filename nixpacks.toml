@@ -1,0 +1,9 @@
+# Force Nixpacks to treat this as a plain Python project.
+# Without this, Nixpacks auto-detects the monorepo (frontend/package.json +
+# backend/pyproject.toml) and picks the wrong builder or tries to install
+# all backend deps (langgraph, celery, etc.) which aren't needed for the job.
+
+providers = ["python"]
+
+[phases.install]
+cmds = ["pip install -r backend/jobs/requirements.txt"]

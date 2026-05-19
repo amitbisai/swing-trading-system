@@ -1,5 +1,6 @@
 [build]
 builder = "nixpacks"
+buildCommand = "pip install -r backend/jobs/requirements.txt"
 
 [deploy]
 startCommand = "python backend/jobs/ingest.py"
