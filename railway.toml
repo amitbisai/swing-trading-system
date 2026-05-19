@@ -1,6 +1,6 @@
 [build]
-builder = "nixpacks"
-buildCommand = "python -m pip install -r backend/jobs/requirements.txt"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.railway"
 
 [deploy]
 startCommand = "python backend/jobs/ingest.py"

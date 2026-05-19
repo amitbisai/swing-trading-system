@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install job dependencies first (cached layer — only rebuilds when requirements change)
+COPY backend/jobs/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy job source
+COPY backend/jobs/ ./backend/jobs/
+
+CMD ["python", "backend/jobs/ingest.py"]
