@@ -18,6 +18,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from dotenv import load_dotenv
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
 # ── Load .env ────────────────────────────────────────────────────────────────
 for _candidate in [
     Path(__file__).parent,
@@ -25,13 +30,8 @@ for _candidate in [
     Path(__file__).parent.parent.parent,
 ]:
     if (_candidate / ".env").exists():
-        from dotenv import load_dotenv
         load_dotenv(_candidate / ".env")
         break
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
 
 # ── DB setup ──────────────────────────────────────────────────────────────────
 

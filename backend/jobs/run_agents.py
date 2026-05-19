@@ -24,6 +24,9 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent   # .../backend/
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
+from dotenv import load_dotenv  # noqa: E402
+from agents.orchestrator import run_orchestrator  # noqa: E402
+
 # ── Load .env ─────────────────────────────────────────────────────────────────
 for _candidate in [
     Path(__file__).parent,
@@ -31,7 +34,6 @@ for _candidate in [
     Path(__file__).parent.parent.parent,
 ]:
     if (_candidate / ".env").exists():
-        from dotenv import load_dotenv
         load_dotenv(_candidate / ".env")
         break
 
@@ -47,9 +49,6 @@ log = logging.getLogger("run_agents")
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
-    # Import here (after sys.path is set) so module resolution works
-    from agents.orchestrator import run_orchestrator
-
     log.info("=" * 60)
     log.info("Nightly agents run starting")
     log.info("=" * 60)

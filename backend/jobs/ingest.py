@@ -25,6 +25,13 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from dotenv import load_dotenv
+import pandas as pd
+import yfinance as yf
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
 # ── Load .env before anything else ───────────────────────────────────────────
 # Walk up from this file's location to find .env (works from any cwd)
 for _candidate in [
@@ -34,15 +41,8 @@ for _candidate in [
 ]:
     _dotenv_path = _candidate / ".env"
     if _dotenv_path.exists():
-        from dotenv import load_dotenv
         load_dotenv(_dotenv_path)
         break
-
-import pandas as pd
-import yfinance as yf
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
