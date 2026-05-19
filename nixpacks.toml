@@ -6,4 +6,4 @@
 providers = ["python"]
 
 [phases.install]
-cmds = ["pip install -r backend/jobs/requirements.txt"]
+cmds = ["python -m pip install -r backend/jobs/requirements.txt"]
