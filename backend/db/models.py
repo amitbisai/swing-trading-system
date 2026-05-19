@@ -163,6 +163,48 @@ class DailyPnL(Base):
     )
 
 
+class T2Scan(Base):
+    """
+    One row per (symbol, scan_date) — stores the raw T2 screener output
+    plus the AI-validated news summary.  Older than 30 days is pruned nightly.
+    """
+    __tablename__ = "t2_scans"
+    __table_args__ = (
+        UniqueConstraint("symbol", "scan_date", name="uq_t2_scans_symbol_date"),
+        Index("ix_t2_scans_scan_date", "scan_date"),
+        Index("ix_t2_scans_symbol",    "symbol"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(
+        String(20), ForeignKey("stocks.symbol", ondelete="CASCADE"), nullable=False
+    )
+    scan_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # Screener outputs
+    signal_tier:        Mapped[str]           = mapped_column(String(1), nullable=False)   # A|B|C
+    t2_score:           Mapped[float]         = mapped_column(Numeric(5, 1), nullable=False)
+    price:              Mapped[float]         = mapped_column(Numeric(12, 4), nullable=False)
+    market_cap:         Mapped[float | None]  = mapped_column(Numeric(20, 0), nullable=True)
+    rvol:               Mapped[float]         = mapped_column(Numeric(8, 2), nullable=False)
+    avg_volume_30d:     Mapped[float | None]  = mapped_column(Numeric(20, 0), nullable=True)
+    revenue_growth:     Mapped[float | None]  = mapped_column(Numeric(8, 4), nullable=True)
+    earnings_growth:    Mapped[float | None]  = mapped_column(Numeric(8, 4), nullable=True)
+    pct_below_52w_high: Mapped[float | None]  = mapped_column(Numeric(8, 4), nullable=True)
+    float_shares:       Mapped[float | None]  = mapped_column(Numeric(20, 0), nullable=True)
+    short_ratio:        Mapped[float | None]  = mapped_column(Numeric(8, 2), nullable=True)
+    sector:             Mapped[str | None]    = mapped_column(String(100), nullable=True)
+    industry:           Mapped[str | None]    = mapped_column(String(200), nullable=True)
+    risk_flags:         Mapped[str | None]    = mapped_column(Text, nullable=True)         # comma-separated
+    signal_summary:     Mapped[str | None]    = mapped_column(Text, nullable=True)
+    catalyst_hint:      Mapped[str | None]    = mapped_column(String(200), nullable=True)
+    news_summary:       Mapped[str | None]    = mapped_column(Text, nullable=True)         # Claude-generated
+    news_verdict:       Mapped[str | None]    = mapped_column(String(20), nullable=True)   # SUPPORTS|NEUTRAL|CONTRADICTS
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
     __table_args__ = (UniqueConstraint("snapshot_date", name="uq_portfolio_snapshot_date"),)

@@ -126,6 +126,63 @@ class SuggestionStats(BaseModel):
     avg_confidence: float
 
 
+class T2ScanOut(BaseModel):
+    id:                 int
+    symbol:             str
+    scan_date:          date
+    signal_tier:        str            # A | B | C
+    t2_score:           float
+    price:              Decimal
+    market_cap:         Decimal | None
+    rvol:               float
+    avg_volume_30d:     Decimal | None
+    revenue_growth:     float | None
+    earnings_growth:    float | None
+    pct_below_52w_high: float | None
+    float_shares:       Decimal | None
+    short_ratio:        float | None
+    sector:             str | None
+    industry:           str | None
+    risk_flags:         list[str]      # parsed from comma-separated DB field
+    signal_summary:     str | None
+    catalyst_hint:      str | None
+    news_summary:       str | None
+    news_verdict:       str | None     # SUPPORTS | NEUTRAL | CONTRADICTS
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_row(cls, row: object) -> "T2ScanOut":
+        """Convert ORM T2Scan to schema — parses risk_flags string."""
+        from db.models import T2Scan as T2ScanModel  # noqa: PLC0415
+        r: T2ScanModel = row  # type: ignore[assignment]
+        flags_raw = r.risk_flags or ""
+        flags = [f.strip() for f in flags_raw.split(",") if f.strip()]
+        return cls(
+            id                 = r.id,
+            symbol             = r.symbol,
+            scan_date          = r.scan_date,
+            signal_tier        = r.signal_tier,
+            t2_score           = float(r.t2_score),
+            price              = r.price,
+            market_cap         = r.market_cap,
+            rvol               = float(r.rvol),
+            avg_volume_30d     = r.avg_volume_30d,
+            revenue_growth     = float(r.revenue_growth) if r.revenue_growth is not None else None,
+            earnings_growth    = float(r.earnings_growth) if r.earnings_growth is not None else None,
+            pct_below_52w_high = float(r.pct_below_52w_high) if r.pct_below_52w_high is not None else None,
+            float_shares       = r.float_shares,
+            short_ratio        = float(r.short_ratio) if r.short_ratio is not None else None,
+            sector             = r.sector,
+            industry           = r.industry,
+            risk_flags         = flags,
+            signal_summary     = r.signal_summary,
+            catalyst_hint      = r.catalyst_hint,
+            news_summary       = r.news_summary,
+            news_verdict       = r.news_verdict,
+        )
+
+
 class AnalyticsSummary(BaseModel):
     as_of: date
     capital: CapitalStats

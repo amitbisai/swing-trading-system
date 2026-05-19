@@ -6,6 +6,7 @@ import type {
   PaperTrade,
   PortfolioSnapshot,
   Suggestion,
+  T2Scan,
   TradeStatus,
 } from "./types";
 
@@ -93,6 +94,15 @@ export function useAnalyticsSummary() {
   return useSWR<AnalyticsSummary>(
     "/api/analytics/summary",
     fetcher<AnalyticsSummary>,
+  );
+}
+
+// ── T2 Scans ──────────────────────────────────────────────────────────────────
+
+export function useT2Scans(days = 30) {
+  return useSWR<T2Scan[]>(
+    `/api/t2-scans/?days=${days}`,
+    fetcher<T2Scan[]>,
   );
 }
 

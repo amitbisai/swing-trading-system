@@ -87,6 +87,33 @@ export interface OpenTradeResponse {
   auto_sized: boolean;
 }
 
+export type T2SignalTier = "A" | "B" | "C";
+export type NewsVerdict = "SUPPORTS" | "NEUTRAL" | "CONTRADICTS";
+
+export interface T2Scan {
+  id: number;
+  symbol: string;
+  scan_date: string;
+  signal_tier: T2SignalTier;
+  t2_score: number;
+  price: string;
+  market_cap: string | null;
+  rvol: number;
+  avg_volume_30d: string | null;
+  revenue_growth: number | null;
+  earnings_growth: number | null;
+  pct_below_52w_high: number | null;
+  float_shares: string | null;
+  short_ratio: number | null;
+  sector: string | null;
+  industry: string | null;
+  risk_flags: string[];
+  signal_summary: string | null;
+  catalyst_hint: string | null;
+  news_summary: string | null;
+  news_verdict: NewsVerdict | null;
+}
+
 export interface ApiResponse<T> {
   data: T;
   error: string | null;

@@ -17,7 +17,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from agents.models import AgentInputBundle, ScannerOutput, TradeTier
 from agents.t2_config import T2Config
+from agents.t2_news import get_news_summaries
 from agents.t2_screener import T2Candidate, T2Screener
+from agents.t2_store import save_t2_scan
 from data.fetcher import fetch_ohlcv
 from db.models import Stock
 from db.session import async_session_factory
@@ -58,6 +60,16 @@ async def run_scanner() -> tuple[list[ScannerOutput], list[AgentInputBundle]]:
     # ── Upsert new T2 symbols into stocks table (FK requirement) ──────────────
     if t2_candidates:
         await _upsert_t2_stocks(t2_candidates)
+
+        # ── News validation + persist scan results ────────────────────────────
+        try:
+            logger.info("Scanner: fetching news & running Claude validation for %d T2 candidates",
+                        len(t2_candidates))
+            news_map = await get_news_summaries(t2_candidates)
+            await save_t2_scan(t2_candidates, news_map)
+            logger.info("Scanner: T2 scan results saved to DB")
+        except Exception as exc:
+            logger.warning("Scanner: T2 news/store step failed (non-fatal): %s", exc)
 
     # ── T1 OHLCV fetch (T2 OHLCV already fetched inside the screener) ────────
     t1_start = today - timedelta(days=_T1_HISTORY_DAYS)
