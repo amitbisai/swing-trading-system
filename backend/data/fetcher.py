@@ -5,7 +5,8 @@ Public API
 ----------
 fetch_ohlcv(tickers, start, end)   → dict[symbol, DataFrame]
 fetch_ohlcv_sync(...)              → same, synchronous
-get_tier2_candidates(...)          → list[str]  momentum screener
+
+T2 screening is handled by agents/t2_screener.py — not this module.
 """
 
 from __future__ import annotations
@@ -22,19 +23,6 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-# Tier-2 extended screen universe (high-beta / momentum names)
-_TIER2_SCREEN_UNIVERSE: list[str] = [
-    "AMD", "NFLX", "ADBE", "CRM", "NOW", "SNOW", "PLTR", "UBER", "ABNB",
-    "COIN", "RBLX", "DKNG", "DASH", "RIVN", "F", "GM",
-    "SHOP", "PYPL", "SOFI", "HOOD", "SMCI", "ARM", "MRVL", "MU",
-    "LRCX", "KLAC", "AMAT", "ASML", "TSM", "INTC", "OKTA", "ZS",
-    "CRWD", "PANW", "FTNT", "NET", "DDOG", "MDB",
-    "ZM", "TWLO", "HUBS", "BILL", "MNDY",
-    "ROKU", "TTD", "DIS", "CMCSA", "TOST",
-    "BA", "LMT", "NOC", "GD", "TDG", "AXON",
-    "NKE", "LULU", "ONON",
-]
 
 # Batch size for yfinance bulk downloads — keeps requests manageable
 _DOWNLOAD_BATCH_SIZE = 100
@@ -61,18 +49,6 @@ async def fetch_ohlcv(
     import asyncio
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_executor, fetch_ohlcv_sync, tickers, start, end)
-
-
-async def get_tier2_candidates(
-    volume_ratio_threshold: float = 3.0,
-    max_results: int = 10,
-) -> list[str]:
-    """Return up to max_results tickers with today's volume > threshold × 20d avg."""
-    import asyncio
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        _executor, _screen_momentum_sync, volume_ratio_threshold, max_results
-    )
 
 
 # ── Synchronous core ──────────────────────────────────────────────────────────
@@ -207,37 +183,3 @@ def _normalize_and_enrich(
             continue
 
     return results
-
-
-def _screen_momentum_sync(threshold: float, max_results: int) -> list[str]:
-    """
-    Scan _TIER2_SCREEN_UNIVERSE for stocks whose latest volume is ≥ threshold
-    times their 20-day average volume.  Returns up to max_results symbols sorted
-    by ratio descending.
-    """
-    today = date.today()
-    start = today - timedelta(days=35)  # enough history for 20d avg
-
-    data = fetch_ohlcv_sync(_TIER2_SCREEN_UNIVERSE, start, today)
-    if not data:
-        return []
-
-    candidates: list[tuple[str, float]] = []
-
-    for symbol, df in data.items():
-        try:
-            if len(df) < 2:
-                continue
-            latest = df.iloc[-1]
-            avg_20 = float(latest["avg_volume_20d"])
-            today_vol = float(latest["Volume"])
-            if avg_20 <= 0:
-                continue
-            ratio = today_vol / avg_20
-            if ratio >= threshold:
-                candidates.append((symbol, ratio))
-        except Exception:
-            continue
-
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    return [sym for sym, _ in candidates[:max_results]]
