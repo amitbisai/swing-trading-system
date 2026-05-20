@@ -1,18 +1,14 @@
 """
 Sentiment agent — wraps the Alpha Vantage NEWS_SENTIMENT endpoint.
 
-Budget: 25 API calls/day (free tier).  When the key is missing or the
-budget is exhausted we return a neutral score of 50 so the pipeline
-continues without crashing.
-
-The module-level counter ensures we never exceed 25 calls per process run.
-Since the agents service runs as a fresh process each night, the counter
-resets automatically.
+Budget management is handled by the orchestrator: it only calls this
+function for the top-ranked stocks (by TA + Pattern score). This agent
+simply makes the API call and returns the result, or falls back to a
+neutral score of 50 on any failure.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from agents.models import AgentInputBundle, SentimentOutput
@@ -21,27 +17,12 @@ from data.alpha_vantage import get_news_sentiment
 
 logger = logging.getLogger(__name__)
 
-# ── Daily budget guard ────────────────────────────────────────────────────────
-_AV_DAILY_LIMIT = 25          # Alpha Vantage free tier: 25 calls/day
-_av_calls_used  = 0           # resets each process run (= each nightly cron)
-_av_lock        = asyncio.Lock()
-
 
 async def run_sentiment(bundle: AgentInputBundle) -> SentimentOutput:
-    global _av_calls_used
+    """Fetch Alpha Vantage news sentiment for a single symbol."""
 
-    # Skip the API call entirely if no key is configured (local dev / CI)
     if not settings.alpha_vantage_api_key:
         return SentimentOutput(symbol=bundle.symbol, score=50)
-
-    # Enforce daily budget — return neutral immediately once exhausted
-    async with _av_lock:
-        if _av_calls_used >= _AV_DAILY_LIMIT:
-            return SentimentOutput(symbol=bundle.symbol, score=50)
-        _av_calls_used += 1
-        call_number = _av_calls_used
-
-    logger.debug("Sentiment: AV call %d/%d for %s", call_number, _AV_DAILY_LIMIT, bundle.symbol)
 
     try:
         raw = await get_news_sentiment(bundle.symbol)
