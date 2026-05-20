@@ -4,4 +4,3 @@ dockerfilePath = "Dockerfile.railway"
 
 [deploy]
 startCommand = "python backend/jobs/ingest.py"
-cronSchedule = "30 21 * * 1-5"
