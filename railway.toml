@@ -1,6 +1,2 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile.railway"
-
-[deploy]
-startCommand = "python backend/jobs/ingest.py"
