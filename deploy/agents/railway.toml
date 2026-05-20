@@ -1,0 +1,7 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.agents"
+
+[deploy]
+startCommand = "python backend/jobs/run_agents.py"
+cronSchedule = "0 22 * * 1-5"
