@@ -16,16 +16,17 @@ from __future__ import annotations
 SEED_UNIVERSE: list[str] = [
     # ── Technology & Cloud Software ───────────────────────────────────────────
     "DDOG", "NET", "ZS", "CRWD", "FTNT", "OKTA", "PLTR", "PATH",
-    "AI", "ASAN", "MNDY", "BILL", "HUBS", "ZI", "GTLB", "IOT",
-    "S",    "PCOR", "BRZE", "JAMF", "FROG", "NCNO", "GWRE", "MANH",
-    "PEGA", "EPAM", "CDNS", "SNPS", "ANSS", "MDB",  "DOMO", "TWLO",
-    "ZM",   "DOCN", "ESTC", "ALRM", "APPF", "BOX",  "SMAR", "COUP",
-    "ALTR", "CWAN", "TOST", "APPN", "NEWR", "PDCE", "VERX", "TASK",
+    "AI", "ASAN", "MNDY", "BILL", "HUBS", "GTLB", "IOT",
+    "S",    "PCOR", "BRZE", "FROG", "NCNO", "GWRE", "MANH",
+    "PEGA", "EPAM", "CDNS", "SNPS", "MDB",  "DOMO", "TWLO",
+    "ZM",   "DOCN", "ESTC", "ALRM", "APPF", "BOX",  "CWAN", "TOST", "APPN", "VERX", "TASK",
+    # removed delisted: ZI, JAMF, ANSS, SMAR, COUP, ALTR, NEWR, PDCE
 
     # ── Semiconductors (mid-cap) ──────────────────────────────────────────────
     "MRVL", "MPWR", "SWKS", "QRVO", "CRUS", "WOLF", "AMBA", "ACLS",
     "ONTO", "POWI", "RMBS", "SITM", "LSCC", "DIOD", "FORM", "HIMX",
-    "SMTC", "AEHR", "CCMP", "INDI", "OLED", "VICR", "AXTI", "COHU",
+    "SMTC", "AEHR", "INDI", "OLED", "VICR", "AXTI", "COHU",
+    # removed delisted: CCMP
 
     # ── Fintech & Crypto ──────────────────────────────────────────────────────
     "COIN", "SOFI", "AFRM", "UPST", "HOOD", "LPLA", "VIRT", "MKTX",
@@ -35,26 +36,30 @@ SEED_UNIVERSE: list[str] = [
     # ── Healthcare / MedTech ──────────────────────────────────────────────────
     "VEEV", "DOCS", "EXAS", "NVCR", "IONS", "ALKS", "NTRA", "TMDX",
     "TWST", "ACAD", "INSM", "KRYS", "ARWR", "FOLD", "RARE", "LEGN",
-    "INVA", "RXDX", "MDXG", "RDVT", "HCAT", "CERT", "GMED", "IRTC",
-    "AXNX", "NARI", "RGEN", "BRKR", "ITGR", "MMSI", "STER",
+    "INVA", "MDXG", "RDVT", "HCAT", "CERT", "GMED", "IRTC",
+    "RGEN", "BRKR", "ITGR", "MMSI",
+    # removed delisted: RXDX, AXNX, NARI, STER
 
     # ── Biotech ───────────────────────────────────────────────────────────────
     "SRPT", "BEAM", "EDIT", "CRSP", "FATE", "DNLI", "ARVN", "KYMR",
-    "PRAX", "PTGX", "RCUS", "IMGO", "NTLA", "ALLO", "KURA", "VKTX",
+    "PRAX", "PTGX", "RCUS", "NTLA", "ALLO", "KURA", "VKTX",
+    # removed delisted: IMGO
     "COGT", "NUVL", "JANX", "IMVT", "LNTH", "CORT", "ACVA",
 
     # ── Consumer Discretionary ────────────────────────────────────────────────
-    "ONON", "DECK", "CROX", "SKX",  "BOOT", "SHAK", "JACK", "CAKE",
+    "ONON", "DECK", "CROX", "BOOT", "SHAK", "JACK", "CAKE",
     "TXRH", "BLMN", "EAT",  "DNUT", "WEN",  "OXM",  "GIII", "XPOF",
-    "MODG", "YETI", "PRKS", "PLNT", "WING", "LOCO",
+    "YETI", "PRKS", "PLNT", "WING", "LOCO",
+    # removed delisted: SKX, MODG
 
     # ── Consumer Growth / Platform ────────────────────────────────────────────
     "DASH", "DKNG", "RBLX", "ROKU", "PINS", "SNAP", "TTD",  "MGNI",
     "ZETA", "APPS", "SSTK", "BRLT", "MAPS", "EVGO", "LYFT",
 
     # ── Industrials & Defense ─────────────────────────────────────────────────
-    "AXON", "HEI",  "ESAB", "KTOS", "MOOG", "CAE",  "SAIC", "LDOS",
-    "TGH",  "AER",  "TDG",  "AVAV", "RKLB", "SPIR", "LUNR", "ACHR",
+    "AXON", "HEI",  "ESAB", "KTOS", "CAE",  "SAIC", "LDOS",
+    "AER",  "TDG",  "AVAV", "RKLB", "SPIR", "LUNR", "ACHR",
+    # removed delisted: MOOG, TGH
 
     # ── Electric Vehicles & Clean Energy ──────────────────────────────────────
     "RIVN", "LCID", "XPEV", "NIO",  "CHPT", "BLNK", "PTRA", "EVGO",
