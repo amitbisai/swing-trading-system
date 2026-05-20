@@ -11,7 +11,6 @@ anthropic>=0.28.0
 # Market data & technical analysis
 yfinance>=0.2.38
 pandas>=2.2.0
-pandas-ta @ git+https://github.com/twopirllc/pandas-ta.git@development
 numpy>=1.26.0
 
 # Database

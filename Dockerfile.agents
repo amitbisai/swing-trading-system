@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-# gcc is needed by some pandas-ta / numpy native extensions
-RUN apt-get update && apt-get install -y --no-install-recommends gcc git && \
+# gcc is needed by some numpy/asyncpg native extensions
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
