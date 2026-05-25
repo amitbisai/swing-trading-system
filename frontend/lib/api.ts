@@ -72,6 +72,20 @@ export async function openTrade(
   return json.data;
 }
 
+export async function closeTrade(
+  trade_id: number,
+  exit_price: number,
+): Promise<PaperTrade> {
+  const res = await fetch(`${API_BASE}/api/paper-trades/${trade_id}/close`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ exit_price, exit_reason: "MANUAL_CLOSE" }),
+  });
+  const json: ApiResponse<PaperTrade> = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return json.data;
+}
+
 // ── Portfolio ─────────────────────────────────────────────────────────────────
 
 export function usePortfolioSnapshot(date?: string) {

@@ -14,8 +14,8 @@ export default function PortfolioPage() {
   const [tab, setTab] = useState<Tab>("open");
 
   const { data: snapshot } = usePortfolioSnapshot();
-  const { data: openTrades, isLoading: openLoading } = usePaperTrades("open");
-  const { data: closedTrades, isLoading: closedLoading } = usePaperTrades("closed");
+  const { data: openTrades,   isLoading: openLoading,   mutate: mutateOpen   } = usePaperTrades("open");
+  const { data: closedTrades, isLoading: closedLoading, mutate: mutateClosed } = usePaperTrades("closed");
 
   const isLoading = tab === "open" ? openLoading : closedLoading;
   const trades = tab === "open" ? openTrades : closedTrades;
@@ -105,7 +105,11 @@ export default function PortfolioPage() {
       ) : tab === "open" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {trades.map((t) => (
-            <PositionCard key={t.id} trade={t} />
+            <PositionCard
+              key={t.id}
+              trade={t}
+              onClosed={() => { mutateOpen(); mutateClosed(); }}
+            />
           ))}
         </div>
       ) : (

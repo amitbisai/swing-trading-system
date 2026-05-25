@@ -83,6 +83,14 @@ class OpenTradeResponse(BaseModel):
     auto_sized: bool            # True when shares was calculated automatically
 
 
+class CloseTradeRequest(BaseModel):
+    exit_price: Decimal = Field(..., gt=0, description="Price at which the trade is closed.")
+    exit_reason: str = Field(
+        default="MANUAL_CLOSE",
+        description="Reason for closing. Default: MANUAL_CLOSE.",
+    )
+
+
 # ── Portfolio ─────────────────────────────────────────────────────────────────
 
 class PortfolioSnapshotOut(BaseModel):

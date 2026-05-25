@@ -1,14 +1,16 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.schemas import ApiResponse, OpenTradeRequest, OpenTradeResponse, PaperTradeOut
+from api.schemas import ApiResponse, CloseTradeRequest, OpenTradeRequest, OpenTradeResponse, PaperTradeOut
 from db.models import PaperTrade, Suggestion
 from db.session import get_db
 from paper_trading.engine import open_trade
+from paper_trading.mark_to_market import compute_realized_pnl
 from risk.position_sizing import compute_position_size
 
 router = APIRouter()
@@ -112,3 +114,46 @@ async def create_paper_trade(
         data=OpenTradeResponse(trade=_to_out(trade), auto_sized=auto_sized),
         timestamp=_ts(),
     )
+
+
+# ── POST /paper-trades/{id}/close ─────────────────────────────────────────────
+
+@router.post("/{trade_id}/close", response_model=ApiResponse[PaperTradeOut])
+async def close_paper_trade(
+    trade_id: int,
+    body: CloseTradeRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[PaperTradeOut]:
+    """
+    Manually close an open paper trade at the given exit_price.
+
+    For a LONG trade this represents selling the shares.
+    For a SHORT trade this represents buying back the shares.
+
+    Realized P&L is computed as:
+      LONG  → (exit_price - entry_price) × shares
+      SHORT → (entry_price - exit_price) × shares
+    """
+    trade = await db.get(PaperTrade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
+    if not trade.is_open:
+        raise HTTPException(status_code=409, detail=f"Trade {trade_id} is already closed")
+
+    exit_price = Decimal(str(body.exit_price))
+
+    trade.exit_date    = date.today()
+    trade.exit_price   = exit_price
+    trade.exit_reason  = body.exit_reason
+    trade.realized_pnl = compute_realized_pnl(
+        entry_price=trade.entry_price,
+        exit_price=exit_price,
+        shares=trade.shares,
+        direction=trade.direction,
+    )
+    trade.is_open = False
+
+    await db.commit()
+    await db.refresh(trade)
+
+    return ApiResponse(data=_to_out(trade), timestamp=_ts())
