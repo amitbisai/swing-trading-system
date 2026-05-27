@@ -7,11 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import ApiResponse, CloseTradeRequest, OpenTradeRequest, OpenTradeResponse, PaperTradeOut
-from db.models import PaperTrade, Suggestion
+from db.models import DailyPrice, PaperTrade, Suggestion
 from db.session import get_db
 from paper_trading.engine import open_trade
 from paper_trading.mark_to_market import compute_realized_pnl
 from risk.position_sizing import compute_position_size
+from risk.stop_target import compute_stop_target
 
 router = APIRouter()
 
@@ -86,7 +87,31 @@ async def create_paper_trade(
             detail=f"An open position already exists for {suggestion.symbol} (trade #{existing.id})",
         )
 
-    # Auto-size if shares not provided
+    # ── Resolve entry price: use latest close from daily_prices if available ──
+    latest_price_row = (await db.execute(
+        select(DailyPrice.close)
+        .where(DailyPrice.symbol == suggestion.symbol)
+        .order_by(DailyPrice.price_date.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+
+    if latest_price_row is not None:
+        entry_price = Decimal(str(latest_price_row))
+        # Recalculate stop/target percentages from the fresh entry price
+        from agents.models import Direction, TradeTier
+        raw_stop, raw_target = compute_stop_target(
+            float(entry_price),
+            TradeTier(suggestion.tier),
+            Direction(suggestion.direction),
+        )
+        stop_price   = Decimal(str(raw_stop))
+        target_price = Decimal(str(raw_target))
+    else:
+        entry_price  = suggestion.entry_price
+        stop_price   = suggestion.stop_loss
+        target_price = suggestion.target_price
+
+    # ── Auto-size if shares not provided ──────────────────────────────────────
     auto_sized = body.shares is None
     if auto_sized:
         from config import settings
@@ -97,7 +122,7 @@ async def create_paper_trade(
             .limit(1)
         )).scalar_one_or_none()
         capital = snap.total_capital if snap else settings.initial_capital
-        shares = compute_position_size(capital, suggestion.entry_price, suggestion.stop_loss)
+        shares = compute_position_size(capital, entry_price, stop_price)
         if shares == 0:
             raise HTTPException(
                 status_code=422,
@@ -106,7 +131,12 @@ async def create_paper_trade(
     else:
         shares = body.shares  # type: ignore[assignment]
 
-    trade = await open_trade(body.suggestion_id, shares)
+    trade = await open_trade(
+        body.suggestion_id, shares,
+        entry_price=entry_price,
+        stop_loss=stop_price,
+        target_price=target_price,
+    )
     if trade is None:
         raise HTTPException(status_code=500, detail="Failed to open trade — see server logs")
 

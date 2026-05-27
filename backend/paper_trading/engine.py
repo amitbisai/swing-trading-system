@@ -57,11 +57,20 @@ class UpdateResult:
 
 # ── Core public functions ─────────────────────────────────────────────────────
 
-async def open_trade(suggestion_id: int, shares: int) -> PaperTrade | None:
+async def open_trade(
+    suggestion_id: int,
+    shares: int,
+    entry_price: Decimal | None = None,
+    stop_loss: Decimal | None = None,
+    target_price: Decimal | None = None,
+) -> PaperTrade | None:
     """
     Create a single paper trade from a suggestion.
 
-    Entry is simulated at the suggestion's entry_price (next-day open approximation).
+    If entry_price / stop_loss / target_price are provided they override the
+    suggestion's stored values — used when the caller has looked up a fresher
+    market price from daily_prices.
+
     Returns the created PaperTrade, or None if suggestion_id is invalid or shares <= 0.
     """
     if shares <= 0:
@@ -74,18 +83,21 @@ async def open_trade(suggestion_id: int, shares: int) -> PaperTrade | None:
             logger.warning("open_trade: suggestion %d not found", suggestion_id)
             return None
 
-        capital_at_risk = suggestion.entry_price * Decimal(str(shares))
+        effective_entry  = entry_price  if entry_price  is not None else suggestion.entry_price
+        effective_stop   = stop_loss    if stop_loss    is not None else suggestion.stop_loss
+        effective_target = target_price if target_price is not None else suggestion.target_price
+        capital_at_risk  = effective_entry * Decimal(str(shares))
 
         trade = PaperTrade(
             suggestion_id=suggestion_id,
             symbol=suggestion.symbol,
             direction=suggestion.direction,
-            entry_date=suggestion.as_of_date,
-            entry_price=suggestion.entry_price,
+            entry_date=date.today(),
+            entry_price=effective_entry,
             shares=shares,
             capital_at_risk=capital_at_risk,
-            stop_loss=suggestion.stop_loss,
-            target_price=suggestion.target_price,
+            stop_loss=effective_stop,
+            target_price=effective_target,
             is_open=True,
         )
         session.add(trade)

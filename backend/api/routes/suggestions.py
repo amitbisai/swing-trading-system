@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import ApiResponse, SuggestionOut
@@ -55,7 +55,22 @@ async def list_suggestions(
         Suggestion.as_of_date.desc(), Suggestion.confidence_score.desc()
     )
     if date:
+        # Explicit date requested — show that date's signals regardless of active flag
         stmt = stmt.where(Suggestion.as_of_date == date)
+    elif active_only:
+        # No explicit date + active_only → restrict to the latest run date only.
+        # This ensures signals from previous runs never bleed through even if
+        # is_active hasn't been flipped yet (e.g. no agents run today).
+        latest_date_subq = (
+            select(func.max(Suggestion.as_of_date))
+            .where(Suggestion.is_active == True)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(Suggestion.as_of_date == latest_date_subq)
+    else:
+        # active_only=False with no date → return full history (for analytics / debug)
+        pass
+
     if tier:
         stmt = stmt.where(Suggestion.tier == tier.upper())
     if direction:

@@ -15,11 +15,12 @@ _MAX_SUGGESTIONS (20).
 from __future__ import annotations
 
 import logging
+import random
 from decimal import Decimal
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 from agents.models import (
     AgentInputBundle,
@@ -36,8 +37,8 @@ from risk.stop_target import compute_stop_target
 
 logger = logging.getLogger(__name__)
 
-_MIN_CONFIDENCE  = 60    # minimum confidence score to emit a suggestion
-_MAX_SUGGESTIONS = 20    # cap on daily signals per tier
+_MIN_CONFIDENCE  = 65    # minimum confidence score to emit a suggestion
+_MAX_SUGGESTIONS = 40    # cap on daily signals (T1 + T2 combined)
 
 
 # ── Directional scoring ───────────────────────────────────────────────────────
@@ -164,7 +165,13 @@ async def run_synthesizer(
 
     candidates: list[SynthesisOutput] = []
 
-    for bundle, ta, sent, pat in zip(bundles, ta_results, sentiment_results, pattern_results):
+    # Shuffle input order so that when stocks tie on confidence score, alphabetical
+    # bias (from the scanner's ORDER BY symbol) doesn't always favour A–F.
+    # zip produces aligned tuples — shuffle them together to preserve alignment.
+    combined_inputs = list(zip(bundles, ta_results, sentiment_results, pattern_results))
+    random.shuffle(combined_inputs)
+
+    for bundle, ta, sent, pat in combined_inputs:
 
         if bundle.entry_price <= 0:
             logger.warning("Synthesizer: %s has no entry price — skipping", bundle.symbol)
@@ -201,8 +208,9 @@ async def run_synthesizer(
             )
         )
 
-    # Sort by confidence descending, cap at _MAX_SUGGESTIONS
-    candidates.sort(key=lambda s: s.confidence_score, reverse=True)
+    # Sort by confidence descending; break ties by combined TA + pattern score
+    # so stronger setups win over weaker ones at the same confidence level.
+    candidates.sort(key=lambda s: (s.confidence_score, s.ta_score + s.pattern_score), reverse=True)
     suggestions = candidates[:_MAX_SUGGESTIONS]
 
     if len(candidates) > _MAX_SUGGESTIONS:
@@ -224,7 +232,17 @@ async def _persist_suggestions(suggestions: list[SynthesisOutput]) -> None:
     as_of = suggestions[0].as_of_date
 
     async with async_session_factory() as session:
+        # Deactivate all suggestions from previous runs so only today's signals
+        # appear in the active feed.  We use UPDATE (not DELETE) to preserve
+        # the FK reference from any paper_trades that were opened against them.
+        await session.execute(
+            update(Suggestion)
+            .where(Suggestion.is_active == True, Suggestion.as_of_date < as_of)
+            .values(is_active=False)
+        )
+
         # Re-running the orchestrator today is idempotent — delete first
+        # (safe because today's suggestions can't have paper trades yet)
         await session.execute(delete(Suggestion).where(Suggestion.as_of_date == as_of))
 
         for s in suggestions:

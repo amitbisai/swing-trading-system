@@ -120,6 +120,15 @@ export function useT2Scans(days = 30) {
   );
 }
 
+// ── Latest prices ─────────────────────────────────────────────────────────────
+
+export function useLatestPrices(symbols: string[]) {
+  const key = symbols.length > 0
+    ? `/api/prices/latest?symbols=${symbols.join(",")}`
+    : null;
+  return useSWR<Record<string, number>>(key, fetcher<Record<string, number>>);
+}
+
 // ── Stocks ────────────────────────────────────────────────────────────────────
 
 export function useStocks(tier?: string) {

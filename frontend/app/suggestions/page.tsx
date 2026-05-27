@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SuggestionCard } from "@/components/suggestion-card";
 import { T2ScanCard } from "@/components/t2-scan-card";
-import { useSuggestions, useT2Scans } from "@/lib/api";
+import { useSuggestions, useT2Scans, useLatestPrices } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Loader2, RefreshCw } from "lucide-react";
 
@@ -45,6 +45,9 @@ function SignalsTab() {
     ...(dir  ? { action: dir } : {}),
     active_only: activeOnly,
   });
+
+  const symbols = data?.map((s) => s.symbol) ?? [];
+  const { data: prices } = useLatestPrices(symbols);
 
   return (
     <div className="space-y-4">
@@ -92,7 +95,13 @@ function SignalsTab() {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {data.map((s) => <SuggestionCard key={s.id} suggestion={s} />)}
+          {data.map((s) => (
+            <SuggestionCard
+              key={s.id}
+              suggestion={s}
+              currentPrice={prices?.[s.symbol]}
+            />
+          ))}
         </div>
       )}
 

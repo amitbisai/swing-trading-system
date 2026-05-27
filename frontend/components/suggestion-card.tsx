@@ -8,6 +8,7 @@ import type { Suggestion } from "@/lib/types";
 
 interface Props {
   suggestion: Suggestion;
+  currentPrice?: number;
 }
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -37,7 +38,7 @@ function ScorePill({ label, score }: { label: string; score: number }) {
   );
 }
 
-export function SuggestionCard({ suggestion: s }: Props) {
+export function SuggestionCard({ suggestion: s, currentPrice }: Props) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -99,10 +100,20 @@ export function SuggestionCard({ suggestion: s }: Props) {
         <ScorePill label="Pat"  score={s.pattern_score} />
       </div>
 
+      {/* ── Last price ───────────────────────────────────────────────────── */}
+      {currentPrice !== undefined && (
+        <div className="flex items-center justify-between px-0.5">
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide">Last Price</span>
+          <span className="font-mono text-sm font-semibold text-white">
+            ${currentPrice.toFixed(2)}
+          </span>
+        </div>
+      )}
+
       {/* ── Price levels ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-1 text-center">
         <div className="rounded-lg bg-slate-900 p-2">
-          <p className="text-[10px] text-slate-500 mb-0.5">Entry</p>
+          <p className="text-[10px] text-slate-500 mb-0.5">Signal Entry</p>
           <p className="font-mono text-sm text-white">{formatCurrency(s.entry_price)}</p>
         </div>
         <div className="rounded-lg bg-slate-900 p-2">

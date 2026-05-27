@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { StatCard } from "@/components/stat-card";
 import { PositionCard, ClosedPositionCard } from "@/components/position-card";
-import { usePaperTrades, usePortfolioSnapshot } from "@/lib/api";
-import { formatCurrency, formatPct } from "@/lib/utils";
+import { usePaperTrades, usePortfolioSnapshot, useLatestPrices } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 type Tab = "open" | "closed";
@@ -13,9 +13,12 @@ type Tab = "open" | "closed";
 export default function PortfolioPage() {
   const [tab, setTab] = useState<Tab>("open");
 
-  const { data: snapshot } = usePortfolioSnapshot();
+  const { data: snapshot, isLoading: snapshotLoading } = usePortfolioSnapshot();
   const { data: openTrades,   isLoading: openLoading,   mutate: mutateOpen   } = usePaperTrades("open");
   const { data: closedTrades, isLoading: closedLoading, mutate: mutateClosed } = usePaperTrades("closed");
+
+  const openSymbols = openTrades?.map((t) => t.symbol) ?? [];
+  const { data: openPrices } = useLatestPrices(openSymbols);
 
   const isLoading = tab === "open" ? openLoading : closedLoading;
   const trades = tab === "open" ? openTrades : closedTrades;
@@ -30,7 +33,13 @@ export default function PortfolioPage() {
       <h1 className="text-xl font-bold text-white">Portfolio</h1>
 
       {/* ── Stats bar ── */}
-      {snapshot ? (
+      {snapshotLoading ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="rounded-xl border border-slate-700 bg-slate-800 p-4 animate-pulse h-16" />
+          ))}
+        </div>
+      ) : snapshot ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <StatCard
             label="Total Capital"
@@ -57,13 +66,7 @@ export default function PortfolioPage() {
             mono
           />
         </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="rounded-xl border border-slate-700 bg-slate-800 p-4 animate-pulse h-16" />
-          ))}
-        </div>
-      )}
+      ) : null}
 
       {/* ── Tabs ── */}
       <div className="flex border border-slate-700 rounded-lg overflow-hidden w-fit">
@@ -108,6 +111,7 @@ export default function PortfolioPage() {
             <PositionCard
               key={t.id}
               trade={t}
+              currentPrice={openPrices?.[t.symbol]}
               onClosed={() => { mutateOpen(); mutateClosed(); }}
             />
           ))}

@@ -61,15 +61,22 @@ async def run_scanner() -> tuple[list[ScannerOutput], list[AgentInputBundle]]:
     if t2_candidates:
         await _upsert_t2_stocks(t2_candidates)
 
-        # ── News validation + persist scan results ────────────────────────────
+        # ── News validation (best-effort) ─────────────────────────────────────
+        news_map: dict[str, dict[str, str]] = {}
         try:
             logger.info("Scanner: fetching news & running Claude validation for %d T2 candidates",
                         len(t2_candidates))
             news_map = await get_news_summaries(t2_candidates)
+            logger.info("Scanner: T2 news validation complete")
+        except Exception as exc:
+            logger.warning("Scanner: T2 news step failed — scan will be saved without news: %s", exc)
+
+        # ── Persist scan results (always runs, even if news fetch failed) ──────
+        try:
             await save_t2_scan(t2_candidates, news_map)
             logger.info("Scanner: T2 scan results saved to DB")
         except Exception as exc:
-            logger.warning("Scanner: T2 news/store step failed (non-fatal): %s", exc)
+            logger.warning("Scanner: T2 store step failed (non-fatal): %s", exc)
 
     # ── T1 OHLCV fetch (T2 OHLCV already fetched inside the screener) ────────
     t1_start = today - timedelta(days=_T1_HISTORY_DAYS)
