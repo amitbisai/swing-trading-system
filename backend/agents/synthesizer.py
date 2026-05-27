@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import random
+from datetime import date
 from decimal import Decimal
 
 from langchain_anthropic import ChatAnthropic
@@ -226,28 +227,30 @@ async def run_synthesizer(
             len(candidates), _MAX_SUGGESTIONS,
         )
 
-    await _persist_suggestions(suggestions)
+    as_of = bundles[0].as_of_date if bundles else date.today()
+    await _persist_suggestions(suggestions, as_of)
     return suggestions
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
-async def _persist_suggestions(suggestions: list[SynthesisOutput]) -> None:
-    if not suggestions:
-        return
-
-    as_of = suggestions[0].as_of_date
-
+async def _persist_suggestions(suggestions: list[SynthesisOutput], as_of: date) -> None:
     async with async_session_factory() as session:
-        # Deactivate all suggestions from previous runs so only today's signals
-        # appear in the active feed.  We use UPDATE (not DELETE) to preserve
-        # the FK reference from any paper_trades that were opened against them.
+        # Always deactivate previous suggestions when agents run — even if today
+        # produced 0 signals.  Skipping this when suggestions is empty caused old
+        # signals to persist and show in the frontend on zero-signal days.
         await session.execute(
             update(Suggestion)
             .where(Suggestion.is_active == True, Suggestion.as_of_date < as_of)
             .values(is_active=False)
         )
+        await session.commit()
 
+    if not suggestions:
+        logger.info("No suggestions to persist for %s — old signals deactivated.", as_of)
+        return
+
+    async with async_session_factory() as session:
         # Re-running the orchestrator today is idempotent — delete first
         # (safe because today's suggestions can't have paper trades yet)
         await session.execute(delete(Suggestion).where(Suggestion.as_of_date == as_of))
