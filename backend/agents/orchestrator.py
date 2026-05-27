@@ -1,21 +1,24 @@
 """
-LangGraph orchestrator — scan → TA+Pattern → Sentiment (top N) → Synthesize.
+LangGraph orchestrator — scan → TA+Pattern → Sentiment → Synthesize.
 
 Graph topology
 --------------
     scan_node
         │
-    ta_pattern_node     (TA ‖ Pattern, all stocks, parallel)
+    ta_pattern_node   (TA ‖ Pattern, all stocks, fully parallel)
         │
-    sentiment_node      (Alpha Vantage on top-25 by TA+Pattern score only)
+    sentiment_node    (Finnhub headlines + Claude Haiku batch — covers ALL stocks)
         │
     synthesize_node
         │
+    save_t1_node
+        │
        END
 
-Sentiment is run last so the limited Alpha Vantage budget (25 calls/day on
-the free tier) is spent on stocks that already show strong technical and
-pattern signals — not wasted on weak setups.
+Sentiment uses Finnhub (60 calls/min free tier) to fetch recent headlines for
+every stock, then scores them all in a single Claude Haiku call.  This replaces
+the old Alpha Vantage approach (25 calls/day) which left 83% of T1 stocks at a
+useless default score of 50.
 
 Run manually:
     cd backend && python -m agents.orchestrator
@@ -39,15 +42,14 @@ from agents.models import (
 )
 from agents.pattern import run_pattern
 from agents.scanner import run_scanner
-from agents.sentiment import run_sentiment
+from agents.sentiment import run_sentiment_batch
 from agents.synthesizer import run_synthesizer
 from agents.t1_store import save_t1_scan
 from agents.ta_agent import run_ta
 
 logger = logging.getLogger(__name__)
 
-_AGENT_TIMEOUT:   float = 30.0   # seconds per individual agent call
-_AV_DAILY_LIMIT:  int   = 25     # Alpha Vantage free tier: 25 calls/day
+_AGENT_TIMEOUT: float = 30.0   # seconds per individual TA/Pattern agent call
 
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -79,11 +81,6 @@ async def _guarded(coro: Any, fallback: Any) -> Any:
         return fallback
 
 
-async def _neutral(symbol: str) -> SentimentOutput:
-    """Return a neutral sentiment score without making any API call."""
-    return SentimentOutput(symbol=symbol, score=50)
-
-
 # ── Graph nodes ───────────────────────────────────────────────────────────────
 
 async def scan_node(state: OrchestratorState) -> OrchestratorState:
@@ -101,9 +98,7 @@ async def scan_node(state: OrchestratorState) -> OrchestratorState:
 async def ta_pattern_node(state: OrchestratorState) -> OrchestratorState:
     """
     Stage 1 of analysis — run TA and Pattern agents in parallel for ALL stocks.
-
-    Results are used in the next node to rank stocks before spending the
-    Alpha Vantage budget on sentiment.
+    Results feed into the sentiment node and synthesizer.
     """
     bundles = state["bundles"]
     if not bundles:
@@ -138,51 +133,32 @@ async def ta_pattern_node(state: OrchestratorState) -> OrchestratorState:
 
 async def sentiment_node(state: OrchestratorState) -> OrchestratorState:
     """
-    Stage 2 of analysis — run Alpha Vantage sentiment on the top-ranked stocks.
+    Stage 2 of analysis — Finnhub headlines + Claude batch sentiment for ALL stocks.
 
-    Ranking uses (ta_score + pattern_score) so the 25-call daily budget is
-    spent on stocks with the strongest technical + pattern signals.
-    Remaining stocks receive a neutral score of 50 immediately.
+    Replaces the old Alpha Vantage per-stock approach (25-call/day budget meant
+    only the top-25 stocks got real scores; the other 122 defaulted to 50).
+
+    run_sentiment_batch() fetches Finnhub news for every symbol (~3 min for 147
+    stocks) then scores them all in a single Claude Haiku call, so every stock
+    enters synthesis with a real sentiment signal.
     """
-    bundles         = state["bundles"]
-    ta_results      = state["ta_results"]
-    pattern_results = state["pattern_results"]
+    bundles = state["bundles"]
 
     if not bundles:
         state["sentiment_results"] = []
         return state
 
-    # Build score lookup maps
-    ta_map      = {r.symbol: r.score for r in ta_results}
-    pattern_map = {r.symbol: r.score for r in pattern_results}
+    try:
+        sentiment_list = await run_sentiment_batch(bundles)
+    except Exception as exc:
+        logger.error(
+            "sentiment_node: batch call failed — falling back to neutral scores: %s", exc,
+            exc_info=True,
+        )
+        sentiment_list = [SentimentOutput(symbol=b.symbol, score=50) for b in bundles]
 
-    # Rank by combined TA + Pattern score (descending)
-    ranked = sorted(
-        bundles,
-        key=lambda b: ta_map.get(b.symbol, 0) + pattern_map.get(b.symbol, 0),
-        reverse=True,
-    )
-    av_quota    = min(_AV_DAILY_LIMIT, len(bundles))
-    top_symbols = {b.symbol for b in ranked[:av_quota]}
-
-    logger.info(
-        "sentiment_node: Alpha Vantage quota=%d/%d  —  top symbols: %s",
-        av_quota, len(bundles),
-        ", ".join(b.symbol for b in ranked[:av_quota]),
-    )
-
-    # Only top-ranked stocks make real API calls; the rest skip instantly
-    sentiment_coros = [
-        _guarded(run_sentiment(b), SentimentOutput(symbol=b.symbol, score=50))
-        if b.symbol in top_symbols
-        else _neutral(b.symbol)
-        for b in bundles
-    ]
-
-    sentiment_list = await asyncio.gather(*sentiment_coros)
-    state["sentiment_results"] = list(sentiment_list)
-
-    logger.info("sentiment_node: Sentiment=%d", len(sentiment_list))
+    state["sentiment_results"] = sentiment_list
+    logger.info("sentiment_node: scored %d symbols", len(sentiment_list))
     return state
 
 

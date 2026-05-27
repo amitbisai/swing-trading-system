@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     # AI
     anthropic_api_key: str = ""
 
-    # Market data (Alpha Vantage free tier: 25 calls/day)
-    alpha_vantage_api_key: str = ""
+    # Market data
+    alpha_vantage_api_key: str = ""  # Alpha Vantage free tier: 25 calls/day (legacy)
+    finnhub_api_key: str = ""        # Finnhub free tier: 60 calls/min — used for batch sentiment
 
     # Task queue
     redis_url: str = "redis://localhost:6379/0"
