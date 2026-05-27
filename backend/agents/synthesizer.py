@@ -170,6 +170,11 @@ async def run_synthesizer(
     # zip produces aligned tuples — shuffle them together to preserve alignment.
     combined_inputs = list(zip(bundles, ta_results, sentiment_results, pattern_results))
     random.shuffle(combined_inputs)
+    logger.info(
+        "Synthesizer: processing %d stocks in shuffled order — first 5: %s",
+        len(combined_inputs),
+        ", ".join(b.symbol for b, *_ in combined_inputs[:5]),
+    )
 
     for bundle, ta, sent, pat in combined_inputs:
 
@@ -208,9 +213,11 @@ async def run_synthesizer(
             )
         )
 
-    # Sort by confidence descending; break ties by combined TA + pattern score
-    # so stronger setups win over weaker ones at the same confidence level.
-    candidates.sort(key=lambda s: (s.confidence_score, s.ta_score + s.pattern_score), reverse=True)
+    # Sort by confidence descending only.  Ties are broken by the random shuffle
+    # applied to combined_inputs above — Python's sort is stable, so candidates
+    # at equal confidence appear in the shuffled (random) order they were appended.
+    # This ensures different stocks surface each day rather than always A–F.
+    candidates.sort(key=lambda s: s.confidence_score, reverse=True)
     suggestions = candidates[:_MAX_SUGGESTIONS]
 
     if len(candidates) > _MAX_SUGGESTIONS:
