@@ -205,6 +205,67 @@ class T2Scan(Base):
     )
 
 
+class T1Scan(Base):
+    """
+    One row per (symbol, scan_date) — stores the raw T1 TA snapshot for every
+    S&P 500 stock the orchestrator processes.  Older than 30 days is pruned
+    nightly.  made_signal=True when the stock also appears in suggestions today.
+    """
+
+    __tablename__ = "t1_scans"
+    __table_args__ = (
+        UniqueConstraint("symbol", "scan_date", name="uq_t1_scans_symbol_date"),
+        Index("ix_t1_scans_scan_date", "scan_date"),
+        Index("ix_t1_scans_symbol", "symbol"),
+        Index("ix_t1_scans_made_signal", "made_signal"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(
+        String(20), ForeignKey("stocks.symbol", ondelete="CASCADE"), nullable=False
+    )
+    scan_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # Price
+    price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+
+    # TA indicators
+    rsi_14: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    macd_hist: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    sma_20: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    sma_50: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    atr_14: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    bb_upper: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    bb_lower: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+
+    # Volume
+    rvol: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    avg_volume_20d: Mapped[float | None] = mapped_column(Numeric(16, 0), nullable=True)
+
+    # Pattern
+    support_level: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    resistance_level: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    patterns_detected: Mapped[str | None] = mapped_column(Text, nullable=True)  # comma-sep
+
+    # Composite scores
+    ta_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    pattern_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    sentiment_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    bullish_confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    bearish_confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    signal_direction: Mapped[str] = mapped_column(String(5), nullable=False)  # LONG | SHORT
+
+    # Whether this stock made it to suggestions today
+    made_signal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Denormalised for fast reads
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
     __table_args__ = (UniqueConstraint("snapshot_date", name="uq_portfolio_snapshot_date"),)

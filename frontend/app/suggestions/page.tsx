@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import { SuggestionCard } from "@/components/suggestion-card";
+import { T1ScanCard } from "@/components/t1-scan-card";
 import { T2ScanCard } from "@/components/t2-scan-card";
-import { useSuggestions, useT2Scans, useLatestPrices } from "@/lib/api";
+import { useSuggestions, useT1Scans, useT2Scans, useLatestPrices } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Loader2, RefreshCw } from "lucide-react";
 
 type Tier = "T1" | "T2" | "";
 type Dir  = "LONG" | "SHORT" | "";
-type Tab  = "signals" | "t2-scans";
+type Tab  = "signals" | "t1-scans" | "t2-scans";
 
 // ── Shared pill ───────────────────────────────────────────────────────────────
 
@@ -108,6 +109,125 @@ function SignalsTab() {
       {data && (
         <p className="text-center text-xs text-slate-600">
           {data.length} signal{data.length !== 1 ? "s" : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── T1 Scans tab ──────────────────────────────────────────────────────────────
+
+function T1ScansTab() {
+  const [days, setDays]             = useState(30);
+  const [dirFilter, setDirFilter]   = useState<Dir>("");
+  const [signalOnly, setSignalOnly] = useState(false);
+  const { data, error, isLoading, mutate } = useT1Scans(days);
+
+  const filtered = (data ?? []).filter((s) => {
+    if (dirFilter && s.signal_direction !== dirFilter) return false;
+    if (signalOnly && !s.made_signal) return false;
+    return true;
+  });
+
+  // Group by scan_date for timeline display
+  const byDate = filtered.reduce<Record<string, typeof filtered>>((acc, scan) => {
+    (acc[scan.scan_date] ??= []).push(scan);
+    return acc;
+  }, {});
+  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+
+  return (
+    <div className="space-y-4">
+      {/* controls */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs text-slate-500">Direction:</span>
+        <FilterPill<Dir> label="Long"  value="LONG"  active={dirFilter === "LONG"}  onClick={(v) => setDirFilter(v as Dir)} />
+        <FilterPill<Dir> label="Short" value="SHORT" active={dirFilter === "SHORT"} onClick={(v) => setDirFilter(v as Dir)} />
+        <div className="w-px bg-slate-700 self-stretch mx-1" />
+        <button
+          onClick={() => setSignalOnly((p) => !p)}
+          className={cn(
+            "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+            signalOnly
+              ? "bg-blue-700 text-white border-transparent"
+              : "bg-transparent text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-300",
+          )}
+        >
+          AI Signal only
+        </button>
+        <div className="w-px bg-slate-700 self-stretch mx-1" />
+        <span className="text-xs text-slate-500">History:</span>
+        {([7, 14, 30] as const).map((d) => (
+          <button
+            key={d}
+            onClick={() => setDays(d)}
+            className={cn(
+              "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+              days === d
+                ? "bg-slate-200 text-slate-900 border-transparent"
+                : "bg-transparent text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-300",
+            )}
+          >
+            {d}d
+          </button>
+        ))}
+        <button
+          onClick={() => mutate()}
+          className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+        >
+          <RefreshCw className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* legend */}
+      <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+        <span className="text-emerald-400 font-medium">LONG</span> = bullish setup
+        <span className="mx-1">·</span>
+        <span className="text-red-400 font-medium">SHORT</span> = bearish setup
+        <span className="mx-1">·</span>
+        <span className="text-blue-400 font-medium">AI Signal</span> = advanced to final suggestion
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
+          Failed to load T1 scan data. Check that the backend is running.
+        </div>
+      ) : dates.length === 0 ? (
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center">
+          <p className="text-slate-400 text-sm">No T1 scan results in the last {days} days.</p>
+          <p className="text-slate-600 text-xs mt-1">
+            Run after US market close (10 PM IST) to see today&apos;s candidates.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {dates.map((d) => (
+            <div key={d}>
+              {/* date divider */}
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-xs font-semibold text-slate-400">{d}</span>
+                <div className="flex-1 h-px bg-slate-700" />
+                <span className="text-xs text-slate-600">
+                  {byDate[d].length} stock{byDate[d].length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {byDate[d].map((scan) => <T1ScanCard key={scan.id} scan={scan} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data && filtered.length > 0 && (
+        <p className="text-center text-xs text-slate-600">
+          {filtered.length} scan record{filtered.length !== 1 ? "s" : ""}
+          {dirFilter ? ` (${dirFilter})` : ""}
+          {signalOnly ? " · AI Signal only" : ""} over last {days} days
         </p>
       )}
     </div>
@@ -244,6 +364,17 @@ export default function SuggestionsPage() {
           AI Signals
         </button>
         <button
+          onClick={() => setTab("t1-scans")}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+            tab === "t1-scans"
+              ? "bg-slate-700 text-white shadow-sm"
+              : "text-slate-400 hover:text-slate-300",
+          )}
+        >
+          T1 Scan History
+        </button>
+        <button
           onClick={() => setTab("t2-scans")}
           className={cn(
             "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
@@ -257,7 +388,13 @@ export default function SuggestionsPage() {
       </div>
 
       {/* ── Content ── */}
-      {tab === "signals" ? <SignalsTab /> : <T2ScansTab />}
+      {tab === "signals" ? (
+        <SignalsTab />
+      ) : tab === "t1-scans" ? (
+        <T1ScansTab />
+      ) : (
+        <T2ScansTab />
+      )}
     </div>
   );
 }

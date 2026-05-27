@@ -114,6 +114,33 @@ export interface T2Scan {
   news_verdict: NewsVerdict | null;
 }
 
+export interface T1Scan {
+  id: number;
+  symbol: string;
+  scan_date: string;
+  price: string;
+  rsi_14: number | null;
+  macd_hist: number | null;
+  sma_20: string | null;
+  sma_50: string | null;
+  atr_14: number | null;
+  bb_upper: string | null;
+  bb_lower: string | null;
+  rvol: number | null;
+  avg_volume_20d: string | null;
+  support_level: string | null;
+  resistance_level: string | null;
+  patterns_detected: string[];
+  ta_score: number;
+  pattern_score: number;
+  sentiment_score: number;
+  bullish_confidence: number;
+  bearish_confidence: number;
+  signal_direction: "LONG" | "SHORT";
+  made_signal: boolean;
+  sector: string | null;
+}
+
 export interface ApiResponse<T> {
   data: T;
   error: string | null;

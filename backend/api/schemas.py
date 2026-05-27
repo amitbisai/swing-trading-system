@@ -191,6 +191,70 @@ class T2ScanOut(BaseModel):
         )
 
 
+class T1ScanOut(BaseModel):
+    id: int
+    symbol: str
+    scan_date: date
+    price: Decimal
+    rsi_14: float | None
+    macd_hist: float | None
+    sma_20: Decimal | None
+    sma_50: Decimal | None
+    atr_14: float | None
+    bb_upper: Decimal | None
+    bb_lower: Decimal | None
+    rvol: float | None
+    avg_volume_20d: Decimal | None
+    support_level: Decimal | None
+    resistance_level: Decimal | None
+    patterns_detected: list[str]  # parsed from comma-separated DB field
+    ta_score: int
+    pattern_score: int
+    sentiment_score: int
+    bullish_confidence: int
+    bearish_confidence: int
+    signal_direction: str  # LONG | SHORT
+    made_signal: bool
+    sector: str | None
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_orm_row(cls, row: object) -> "T1ScanOut":
+        """Convert ORM T1Scan to schema — parses patterns_detected string."""
+        from db.models import T1Scan as T1ScanModel  # noqa: PLC0415
+
+        r: T1ScanModel = row  # type: ignore[assignment]
+        raw = r.patterns_detected or ""
+        patterns = [p.strip() for p in raw.split(",") if p.strip()]
+        return cls(
+            id=r.id,
+            symbol=r.symbol,
+            scan_date=r.scan_date,
+            price=r.price,
+            rsi_14=float(r.rsi_14) if r.rsi_14 is not None else None,
+            macd_hist=float(r.macd_hist) if r.macd_hist is not None else None,
+            sma_20=r.sma_20,
+            sma_50=r.sma_50,
+            atr_14=float(r.atr_14) if r.atr_14 is not None else None,
+            bb_upper=r.bb_upper,
+            bb_lower=r.bb_lower,
+            rvol=float(r.rvol) if r.rvol is not None else None,
+            avg_volume_20d=r.avg_volume_20d,
+            support_level=r.support_level,
+            resistance_level=r.resistance_level,
+            patterns_detected=patterns,
+            ta_score=r.ta_score,
+            pattern_score=r.pattern_score,
+            sentiment_score=r.sentiment_score,
+            bullish_confidence=r.bullish_confidence,
+            bearish_confidence=r.bearish_confidence,
+            signal_direction=r.signal_direction,
+            made_signal=r.made_signal,
+            sector=r.sector,
+        )
+
+
 class AnalyticsSummary(BaseModel):
     as_of: date
     capital: CapitalStats

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routes import analytics, paper_trades, portfolio, prices, stocks, suggestions, t2_scans
+from api.routes import analytics, paper_trades, portfolio, prices, stocks, suggestions, t1_scans, t2_scans
 from config import settings
 
 
@@ -36,6 +36,7 @@ app.include_router(paper_trades.router, prefix="/api/paper-trades",  tags=["pape
 app.include_router(portfolio.router,    prefix="/api/portfolio",     tags=["portfolio"])
 app.include_router(stocks.router,       prefix="/api/stocks",        tags=["stocks"])
 app.include_router(analytics.router,    prefix="/api/analytics",     tags=["analytics"])
+app.include_router(t1_scans.router,     prefix="/api/t1-scans",      tags=["t1-scans"])
 app.include_router(t2_scans.router,     prefix="/api/t2-scans",      tags=["t2-scans"])
 app.include_router(prices.router,       prefix="/api/prices",        tags=["prices"])
 

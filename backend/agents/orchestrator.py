@@ -41,6 +41,7 @@ from agents.pattern import run_pattern
 from agents.scanner import run_scanner
 from agents.sentiment import run_sentiment
 from agents.synthesizer import run_synthesizer
+from agents.t1_store import save_t1_scan
 from agents.ta_agent import run_ta
 
 logger = logging.getLogger(__name__)
@@ -200,6 +201,25 @@ async def synthesize_node(state: OrchestratorState) -> OrchestratorState:
     return state
 
 
+async def save_t1_node(state: OrchestratorState) -> OrchestratorState:
+    """
+    Persist T1 scan snapshots for all T1 stocks after synthesis completes.
+    Failure is non-fatal — logs the error and continues to END.
+    """
+    try:
+        suggestion_symbols = {s.symbol for s in state["suggestions"]}
+        await save_t1_scan(
+            bundles=state["bundles"],
+            ta_results=state["ta_results"],
+            pattern_results=state["pattern_results"],
+            sentiment_results=state["sentiment_results"],
+            suggestion_symbols=suggestion_symbols,
+        )
+    except Exception as exc:
+        logger.error("save_t1_node failed (non-fatal): %s", exc, exc_info=True)
+    return state
+
+
 # ── Graph construction ────────────────────────────────────────────────────────
 
 def _build_graph() -> Any:
@@ -209,12 +229,14 @@ def _build_graph() -> Any:
     graph.add_node("ta_pattern", ta_pattern_node)
     graph.add_node("sentiment",  sentiment_node)
     graph.add_node("synthesize", synthesize_node)
+    graph.add_node("save_t1",    save_t1_node)
 
     graph.set_entry_point("scan")
     graph.add_edge("scan",       "ta_pattern")
     graph.add_edge("ta_pattern", "sentiment")
     graph.add_edge("sentiment",  "synthesize")
-    graph.add_edge("synthesize", END)
+    graph.add_edge("synthesize", "save_t1")
+    graph.add_edge("save_t1",    END)
 
     return graph.compile()
 
