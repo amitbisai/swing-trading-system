@@ -37,7 +37,7 @@ from risk.stop_target import compute_stop_target
 
 logger = logging.getLogger(__name__)
 
-_MIN_CONFIDENCE  = 65    # minimum confidence score to emit a suggestion
+_MIN_CONFIDENCE  = 63    # minimum confidence score to emit a suggestion
 _MAX_SUGGESTIONS = 40    # cap on daily signals (T1 + T2 combined)
 
 
