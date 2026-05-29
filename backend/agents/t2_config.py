@@ -19,8 +19,8 @@ class T2Config:
 
     # ── Market cap (USD) ──────────────────────────────────────────────────────
     min_market_cap: float = 300_000_000    # $300 M — avoids micro-cap manipulation
-    max_market_cap: float = 50_000_000_000 # $50 B — raised from $15B; $20-40B names
-                                           #          can have powerful swing moves
+    max_market_cap: float = 100_000_000_000 # $100 B — large-caps can still produce
+                                            #           strong swing moves on volume surges
 
     # ── Price ─────────────────────────────────────────────────────────────────
     min_price: float = 10.0               # avoids penny-stock behaviour
