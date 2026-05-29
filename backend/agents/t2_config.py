@@ -18,8 +18,9 @@ class T2Config:
     max_results: int = 15
 
     # ── Market cap (USD) ──────────────────────────────────────────────────────
-    min_market_cap: float = 300_000_000   # $300 M — avoids micro-cap manipulation
-    max_market_cap: float = 15_000_000_000  # $15 B — avoids mega-cap saturation
+    min_market_cap: float = 300_000_000    # $300 M — avoids micro-cap manipulation
+    max_market_cap: float = 50_000_000_000 # $50 B — raised from $15B; $20-40B names
+                                           #          can have powerful swing moves
 
     # ── Price ─────────────────────────────────────────────────────────────────
     min_price: float = 10.0               # avoids penny-stock behaviour
@@ -28,27 +29,35 @@ class T2Config:
     min_avg_volume_30d: int = 500_000     # 30-day average shares/day
 
     # ── Relative Volume (RVOL = today_vol / avg_20d_vol) ─────────────────────
-    rvol_min: float = 2.0                 # minimum to enter pipeline
-    rvol_preferred: float = 3.0           # preferred (used in scoring)
+    rvol_min: float = 1.5                 # lowered from 2.0 — 1.5× is the professional
+                                          # standard for "unusual volume"; 2× was cutting
+                                          # most valid setups before they could be scored
+    rvol_preferred: float = 2.5           # preferred threshold for scoring bonus
 
     # ── Momentum gates ────────────────────────────────────────────────────────
-    require_above_50dma: bool = True      # price must be > 50-day SMA
-    require_above_200dma: bool = True     # price must be > 200-day SMA
-    max_pct_below_52w_high: float = 0.15  # must be within 15 % of 52-week high
+    require_above_50dma: bool = True      # price must be > 50-day SMA (kept)
+    require_above_200dma: bool = False    # removed hard gate — stocks reclaiming the
+                                          # 200 DMA are often the best breakout setups;
+                                          # 200 DMA relationship is now a scoring factor
+    max_pct_below_52w_high: float = 0.25  # raised from 15% → 25%; stocks building a
+                                          # base 15-25% below the 52W high are valid
+                                          # swing candidates before the next leg up
 
     # ── Trend strength (gates, not hard filters — partial pass still scores) ──
     prefer_50dma_above_200dma: bool = True  # golden-cross preferred
     min_20d_momentum: float = 0.0         # 20-day price return > 0
 
     # ── Fundamental growth ────────────────────────────────────────────────────
-    # Stock passes the fundamental gate if EITHER revenue OR earnings clears threshold
-    # Set require_growth_filter=False to skip fundamentals entirely
-    require_growth_filter: bool = True
-    min_revenue_growth_yoy: float = 0.10  # 10 % YoY (relaxed from 20 % for coverage)
-    min_earnings_growth_yoy: float = 0.10  # 10 % YoY
+    # Swing trading is price action driven (3-14 days), not fundamental investing.
+    # A 3× RVOL surge on a catalyst is valid regardless of last quarter's YoY growth.
+    # Growth data is still used as a SCORING bonus when available — just not a hard gate.
+    require_growth_filter: bool = False   # disabled — too many valid setups filtered out
+    min_revenue_growth_yoy: float = 0.05  # used only when require_growth_filter=True
+    min_earnings_growth_yoy: float = 0.05
 
     # ── Float ─────────────────────────────────────────────────────────────────
-    max_float_shares: int = 300_000_000   # 300 M — smaller float = stronger moves
+    max_float_shares: int = 500_000_000   # raised from 300M → 500M; quality mid-caps
+                                          # with 300-500M float still make strong moves
     min_float_shares: int = 5_000_000    #   5 M — avoids extreme illiquidity
 
     # ── Volume sustainability ─────────────────────────────────────────────────
