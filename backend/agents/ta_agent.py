@@ -82,12 +82,22 @@ def _sma(close: pd.Series, length: int) -> pd.Series:
 
 # ── Agent entry point ─────────────────────────────────────────────────────────
 
-async def run_ta(bundle: AgentInputBundle) -> TAOutput:
-    today = date.today()
-    start = today - timedelta(days=_HISTORY_DAYS)
+async def run_ta(
+    bundle: AgentInputBundle,
+    df: pd.DataFrame | None = None,
+) -> TAOutput:
+    """
+    Compute TA indicators for *bundle*.
 
-    data = await fetch_ohlcv([bundle.symbol], start, today)
-    df = data.get(bundle.symbol)
+    If *df* is supplied (pre-fetched by the orchestrator) no network call is
+    made.  Without *df* a per-stock yfinance download is performed as a
+    fallback (used when calling the agent standalone for testing).
+    """
+    if df is None:
+        today = date.today()
+        start = today - timedelta(days=_HISTORY_DAYS)
+        data = await fetch_ohlcv([bundle.symbol], start, today)
+        df = data.get(bundle.symbol)
 
     if df is None or df.empty or len(df) < 20:
         logger.debug("TA: insufficient data for %s", bundle.symbol)

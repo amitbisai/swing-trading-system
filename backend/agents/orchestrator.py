@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date, timedelta
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -46,6 +47,7 @@ from agents.sentiment import run_sentiment_batch
 from agents.synthesizer import run_synthesizer
 from agents.t1_store import save_t1_scan
 from agents.ta_agent import run_ta
+from data.fetcher import fetch_ohlcv
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,11 @@ async def scan_node(state: OrchestratorState) -> OrchestratorState:
 async def ta_pattern_node(state: OrchestratorState) -> OrchestratorState:
     """
     Stage 1 of analysis — run TA and Pattern agents in parallel for ALL stocks.
-    Results feed into the sentiment node and synthesizer.
+
+    OHLCV data is fetched ONCE in a single bulk yfinance call, then the same
+    DataFrame is passed to both TA and Pattern for each stock.  This replaces
+    the old design (2 × N individual yfinance downloads) which saturated the
+    4-worker thread pool and caused every Pattern call to time out.
     """
     bundles = state["bundles"]
     if not bundles:
@@ -106,16 +112,28 @@ async def ta_pattern_node(state: OrchestratorState) -> OrchestratorState:
         state["pattern_results"] = []
         return state
 
+    # ── Single bulk OHLCV prefetch for all symbols ────────────────────────────
+    symbols = [b.symbol for b in bundles]
+    today   = date.today()
+    start   = today - timedelta(days=90)   # matches _HISTORY_DAYS in ta_agent / pattern
+
+    logger.info("ta_pattern_node: prefetching OHLCV for %d symbols (%s → %s)", len(symbols), start, today)
+    ohlcv_map = await fetch_ohlcv(symbols, start, today)
+    logger.info(
+        "ta_pattern_node: OHLCV prefetch done — %d/%d symbols have data",
+        len(ohlcv_map), len(symbols),
+    )
+
+    # ── TA and Pattern run fully in parallel, reusing the prefetched data ─────
     ta_coros = [
-        _guarded(run_ta(b), TAOutput(symbol=b.symbol, score=50))
+        _guarded(run_ta(b, df=ohlcv_map.get(b.symbol)), TAOutput(symbol=b.symbol, score=50))
         for b in bundles
     ]
     pattern_coros = [
-        _guarded(run_pattern(b), PatternOutput(symbol=b.symbol, score=50))
+        _guarded(run_pattern(b, df=ohlcv_map.get(b.symbol)), PatternOutput(symbol=b.symbol, score=50))
         for b in bundles
     ]
 
-    # TA and Pattern run fully in parallel
     ta_list, pattern_list = await asyncio.gather(
         asyncio.gather(*ta_coros),
         asyncio.gather(*pattern_coros),
