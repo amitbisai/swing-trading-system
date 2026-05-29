@@ -105,7 +105,7 @@ async def run_sentiment_batch(bundles: list[AgentInputBundle]) -> list[Sentiment
     llm = ChatAnthropic(
         model=settings.llm_model,
         api_key=settings.anthropic_api_key,
-        max_tokens=1024,
+        max_tokens=4096,   # 149 stocks × ~15 chars/entry needs ~2200+ tokens
     )
 
     raw_text = ""
