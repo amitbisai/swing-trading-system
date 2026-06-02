@@ -115,9 +115,13 @@ export function useAnalyticsSummary() {
 
 // ── T1 Scans ──────────────────────────────────────────────────────────────────
 
-export function useT1Scans(days = 30) {
+/**
+ * signal_only=true (default) — only stocks that became a final T1 suggestion.
+ * Pass signal_only=false to fetch all 146+ screened stocks (debug use only).
+ */
+export function useT1Scans(days = 30, signalOnly = true) {
   return useSWR<T1Scan[]>(
-    `/api/t1-scans/?days=${days}`,
+    `/api/t1-scans/?days=${days}&signal_only=${signalOnly}`,
     fetcher<T1Scan[]>,
   );
 }

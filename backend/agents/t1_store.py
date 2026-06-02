@@ -201,13 +201,25 @@ async def save_t1_scan(
     )
 
 
-async def get_recent_t1_scans(days: int = 30) -> list[T1Scan]:
-    """Fetch the last `days` calendar days of T1 scan results, newest first."""
+async def get_recent_t1_scans(days: int = 30, signal_only: bool = True) -> list[T1Scan]:
+    """
+    Fetch the last `days` calendar days of T1 scan results, newest first.
+
+    signal_only=True (default) — return only rows where made_signal=True,
+    i.e. the stocks the AI orchestrator promoted to a final T1 suggestion.
+    This is the "T1 Scan History" view: a clean record of every stock that
+    cleared all agent gates on each nightly run.
+
+    signal_only=False — return all 146+ screened stocks (used for debugging).
+    """
     cutoff = date.today() - timedelta(days=days)
     async with async_session_factory() as session:
-        rows = await session.execute(
+        q = (
             select(T1Scan)
             .where(T1Scan.scan_date >= cutoff)
-            .order_by(T1Scan.scan_date.desc(), T1Scan.ta_score.desc())
         )
+        if signal_only:
+            q = q.where(T1Scan.made_signal.is_(True))
+        q = q.order_by(T1Scan.scan_date.desc(), T1Scan.bullish_confidence.desc())
+        rows = await session.execute(q)
         return list(rows.scalars().all())

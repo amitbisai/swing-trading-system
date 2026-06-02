@@ -116,16 +116,17 @@ function SignalsTab() {
 }
 
 // ── T1 Scans tab ──────────────────────────────────────────────────────────────
+// Shows only the stocks the AI orchestrator promoted to a final T1 signal —
+// the same set visible under "AI Signals → T1", with full TA detail.
 
 function T1ScansTab() {
-  const [days, setDays]             = useState(30);
-  const [dirFilter, setDirFilter]   = useState<Dir>("");
-  const [signalOnly, setSignalOnly] = useState(false);
-  const { data, error, isLoading, mutate } = useT1Scans(days);
+  const [days, setDays]           = useState(30);
+  const [dirFilter, setDirFilter] = useState<Dir>("");
+  // signal_only is always true — this tab IS the history of AI Signals → T1
+  const { data, error, isLoading, mutate } = useT1Scans(days, true);
 
   const filtered = (data ?? []).filter((s) => {
     if (dirFilter && s.signal_direction !== dirFilter) return false;
-    if (signalOnly && !s.made_signal) return false;
     return true;
   });
 
@@ -143,18 +144,6 @@ function T1ScansTab() {
         <span className="text-xs text-slate-500">Direction:</span>
         <FilterPill<Dir> label="Long"  value="LONG"  active={dirFilter === "LONG"}  onClick={(v) => setDirFilter(v as Dir)} />
         <FilterPill<Dir> label="Short" value="SHORT" active={dirFilter === "SHORT"} onClick={(v) => setDirFilter(v as Dir)} />
-        <div className="w-px bg-slate-700 self-stretch mx-1" />
-        <button
-          onClick={() => setSignalOnly((p) => !p)}
-          className={cn(
-            "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
-            signalOnly
-              ? "bg-blue-700 text-white border-transparent"
-              : "bg-transparent text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-300",
-          )}
-        >
-          AI Signal only
-        </button>
         <div className="w-px bg-slate-700 self-stretch mx-1" />
         <span className="text-xs text-slate-500">History:</span>
         {([7, 14, 30] as const).map((d) => (
@@ -185,7 +174,7 @@ function T1ScansTab() {
         <span className="mx-1">·</span>
         <span className="text-red-400 font-medium">SHORT</span> = bearish setup
         <span className="mx-1">·</span>
-        <span className="text-blue-400 font-medium">AI Signal</span> = advanced to final suggestion
+        Full TA detail for every stock that cleared all agent gates
       </div>
 
       {isLoading ? (
@@ -198,9 +187,9 @@ function T1ScansTab() {
         </div>
       ) : dates.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center">
-          <p className="text-slate-400 text-sm">No T1 scan results in the last {days} days.</p>
+          <p className="text-slate-400 text-sm">No T1 signals in the last {days} days.</p>
           <p className="text-slate-600 text-xs mt-1">
-            Run after US market close (10 PM IST) to see today&apos;s candidates.
+            Run after US market close (10 PM IST) to see today&apos;s signals.
           </p>
         </div>
       ) : (
@@ -212,7 +201,7 @@ function T1ScansTab() {
                 <span className="text-xs font-semibold text-slate-400">{d}</span>
                 <div className="flex-1 h-px bg-slate-700" />
                 <span className="text-xs text-slate-600">
-                  {byDate[d].length} stock{byDate[d].length !== 1 ? "s" : ""}
+                  {byDate[d].length} signal{byDate[d].length !== 1 ? "s" : ""}
                 </span>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -225,9 +214,8 @@ function T1ScansTab() {
 
       {data && filtered.length > 0 && (
         <p className="text-center text-xs text-slate-600">
-          {filtered.length} scan record{filtered.length !== 1 ? "s" : ""}
-          {dirFilter ? ` (${dirFilter})` : ""}
-          {signalOnly ? " · AI Signal only" : ""} over last {days} days
+          {filtered.length} signal{filtered.length !== 1 ? "s" : ""}
+          {dirFilter ? ` (${dirFilter})` : ""} over last {days} days
         </p>
       )}
     </div>
