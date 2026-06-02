@@ -93,8 +93,43 @@ export function FinancialCard({ data, onRemove, onRefresh, isRefreshing }: Finan
     revenue_growth_yoy, net_margin,
     debt_to_equity, analyst_recommendation, analyst_target_price,
     next_earnings, quarterly_results,
-    trade_readiness, risk_flags, claude_view,
+    trade_readiness, risk_flags, claude_view, fetched_at,
   } = data;
+
+  // yfinance returns price=0 and name=symbol when the ticker doesn't exist
+  const isInvalidTicker = price === 0 && name === symbol;
+
+  // Unknown ticker — yfinance returned empty shell
+  if (isInvalidTicker) {
+    return (
+      <div className="bg-slate-800 rounded-xl border border-red-800/50 p-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white">{symbol}</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-bold border bg-red-500/20 text-red-400 border-red-500/40">
+              NOT FOUND
+            </span>
+          </div>
+          <p className="text-slate-400 text-sm mt-1">
+            Ticker <span className="text-white font-mono">{symbol}</span> was not recognised.
+            Check the spelling and try again.
+          </p>
+          <p className="text-slate-600 text-xs mt-0.5">
+            US stocks use their exchange symbol (e.g. AAPL, NVDA, TSLA).
+          </p>
+        </div>
+        {onRemove && (
+          <button
+            onClick={onRemove}
+            title="Remove"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+          >
+            <span className="text-xs leading-none">✕</span>
+          </button>
+        )}
+      </div>
+    );
+  }
 
   const earningsUrgent  = next_earnings?.days_until != null && next_earnings.days_until <= 7;
   const earningsComing  = next_earnings?.days_until != null && next_earnings.days_until <= 14;
