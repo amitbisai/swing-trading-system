@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BrainCircuit, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, BrainCircuit, RefreshCw } from "lucide-react";
 import type { FinancialSummary, QuarterlyResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -82,9 +82,11 @@ function RevenueBar({ quarters }: { quarters: QuarterlyResult[] }) {
 interface FinancialCardProps {
   data: FinancialSummary;
   onRemove?: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-export function FinancialCard({ data, onRemove }: FinancialCardProps) {
+export function FinancialCard({ data, onRemove, onRefresh, isRefreshing }: FinancialCardProps) {
   const {
     symbol, name, sector, price,
     market_cap, pe_ratio, forward_pe,
@@ -129,22 +131,44 @@ export function FinancialCard({ data, onRemove }: FinancialCardProps) {
           <p className="text-slate-400 text-sm mt-0.5 truncate">{name}</p>
           <p className="text-slate-500 text-xs">{sector}</p>
         </div>
-        <div className="text-right shrink-0">
+        <div className="flex flex-col items-end gap-1 shrink-0">
           <p className="text-white font-bold text-lg">${fmt(price)}</p>
           {analyst_target_price && (
             <p className="text-slate-400 text-xs">
-              Target: <span className={analyst_target_price > price ? "text-emerald-400" : "text-red-400"}>
+              Target:{" "}
+              <span className={analyst_target_price > price ? "text-emerald-400" : "text-red-400"}>
                 ${fmt(analyst_target_price)}
               </span>
             </p>
           )}
-          {onRemove && (
-            <button
-              onClick={onRemove}
-              className="text-slate-600 hover:text-slate-400 text-xs mt-1 transition-colors"
-            >
-              ✕ remove
-            </button>
+          {/* Refresh + Remove buttons */}
+          <div className="flex items-center gap-1 mt-0.5">
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                title="Refresh data"
+                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700
+                           disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
+              </button>
+            )}
+            {onRemove && (
+              <button
+                onClick={onRemove}
+                title="Remove"
+                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 transition-colors"
+              >
+                <span className="text-xs leading-none">✕</span>
+              </button>
+            )}
+          </div>
+          {/* Fetched-at timestamp */}
+          {fetched_at && (
+            <p className="text-[10px] text-slate-600" title={fetched_at}>
+              {isRefreshing ? "Refreshing…" : `as of ${new Date(fetched_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+            </p>
           )}
         </div>
       </div>

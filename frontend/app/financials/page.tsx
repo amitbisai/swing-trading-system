@@ -1,80 +1,124 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent } from "react";
+import { useState, useEffect, useRef, KeyboardEvent } from "react";
 import useSWR from "swr";
-import { Search, X, Zap } from "lucide-react";
+import { Loader2, RefreshCw, Search, X, Zap } from "lucide-react";
 import { FinancialCard, FinancialCardSkeleton } from "@/components/financial-card";
 import type { ApiResponse, FinancialSummary } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const LS_KEY = "financials-symbols";   // localStorage key
+
+// ── Persistence hook ──────────────────────────────────────────────────────────
+// Initialises from localStorage on first render; syncs every change back.
+
+function usePersistedSymbols() {
+  const [symbols, setSymbols] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(symbols));
+    } catch {
+      // private-mode or storage full — ignore
+    }
+  }, [symbols]);
+
+  return [symbols, setSymbols] as const;
+}
 
 // ── Per-symbol SWR fetcher ────────────────────────────────────────────────────
 
-function useFinancial(symbol: string | null) {
+function useFinancial(symbol: string) {
   return useSWR<FinancialSummary>(
-    symbol ? `${API_BASE}/api/financials/${symbol}` : null,
+    `${API_BASE}/api/financials/${symbol}`,
     async (url: string) => {
       const res = await fetch(url);
       const json: ApiResponse<FinancialSummary> = await res.json();
       if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
       return json.data;
     },
-    { revalidateOnFocus: false },
+    { revalidateOnFocus: false, revalidateOnReconnect: false },
   );
 }
 
-// ── Individual card wrapper (owns its own SWR key) ───────────────────────────
+// ── Individual card wrapper ───────────────────────────────────────────────────
 
 function SymbolCard({ symbol, onRemove }: { symbol: string; onRemove: () => void }) {
-  const { data, error, isLoading } = useFinancial(symbol);
+  const { data, error, isLoading, isValidating, mutate } = useFinancial(symbol);
 
+  // First-time load → skeleton
   if (isLoading) return <FinancialCardSkeleton />;
 
+  // Fetch failed
   if (error || !data) {
     return (
       <div className="bg-slate-800 rounded-xl border border-red-800/50 p-4">
-        <div className="flex justify-between items-start">
-          <div>
+        <div className="flex justify-between items-start gap-3">
+          <div className="min-w-0">
             <p className="font-bold text-white">{symbol}</p>
-            <p className="text-red-400 text-sm mt-1">
+            <p className="text-red-400 text-sm mt-1 break-words">
               {error?.message ?? "Failed to load data"}
             </p>
           </div>
-          <button
-            onClick={onRemove}
-            className="text-slate-500 hover:text-slate-300 transition-colors"
-            aria-label="Remove"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => mutate()}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              title="Retry"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onRemove}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-700 transition-colors"
+              aria-label="Remove"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  return <FinancialCard data={data} onRemove={onRemove} />;
+  return (
+    <FinancialCard
+      data={data}
+      isRefreshing={isValidating}
+      onRefresh={() => mutate()}
+      onRemove={onRemove}
+    />
+  );
 }
 
 // ── Quick-add presets ─────────────────────────────────────────────────────────
 
 const QUICK_PRESETS = [
-  { label: "Mag-7", symbols: ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"] },
-  { label: "Semis",  symbols: ["NVDA", "AMD", "AVGO", "AMBA", "MRVL", "QCOM"] },
+  { label: "Mag-7",   symbols: ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"] },
+  { label: "Semis",   symbols: ["NVDA", "AMD", "AVGO", "AMBA", "MRVL", "QCOM"] },
   { label: "AI Play", symbols: ["NVDA", "MSFT", "PLTR", "AI", "SOUN"] },
 ] as const;
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FinancialsPage() {
-  const [symbols, setSymbols] = useState<string[]>([]);
+  const [symbols, setSymbols] = usePersistedSymbols();
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   function addSymbol(raw: string) {
     const sym = raw.trim().toUpperCase().replace(/[^A-Z.]/g, "");
     if (!sym || sym.length > 10) return;
-    if (symbols.includes(sym)) return;
-    if (symbols.length >= 10) return;   // hard cap — same as API batch limit
+    if (symbols.includes(sym)) { setInput(""); return; }
+    if (symbols.length >= 10) return;
     setSymbols(prev => [...prev, sym]);
     setInput("");
   }
@@ -169,7 +213,7 @@ export default function FinancialsPage() {
               </button>
             ))}
             <span className="text-xs text-slate-600 self-center ml-1">
-              {symbols.length}/10 loaded
+              {symbols.length}/10 saved
             </span>
           </div>
         </div>
@@ -203,7 +247,8 @@ export default function FinancialsPage() {
             <p className="text-slate-400 font-medium">No stocks added yet</p>
             <p className="text-slate-600 text-sm mt-1 max-w-xs">
               Enter a ticker above or use a quick-add preset to see earnings risk,
-              fundamentals, and a Claude swing-trade view.
+              fundamentals, and a Claude swing-trade view. Your watchlist is saved
+              automatically.
             </p>
           </div>
         )}
