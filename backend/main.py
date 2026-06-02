@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routes import analytics, paper_trades, portfolio, prices, stocks, suggestions, t1_scans, t2_scans
+from api.routes import analytics, financials, paper_trades, portfolio, prices, stocks, suggestions, t1_scans, t2_scans
 from config import settings
 
 
@@ -39,6 +39,7 @@ app.include_router(analytics.router,    prefix="/api/analytics",     tags=["anal
 app.include_router(t1_scans.router,     prefix="/api/t1-scans",      tags=["t1-scans"])
 app.include_router(t2_scans.router,     prefix="/api/t2-scans",      tags=["t2-scans"])
 app.include_router(prices.router,       prefix="/api/prices",        tags=["prices"])
+app.include_router(financials.router,   prefix="/api/financials",    tags=["financials"])
 
 
 # ── Global exception handler — keeps the { data, error, timestamp } envelope ─

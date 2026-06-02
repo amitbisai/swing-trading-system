@@ -146,3 +146,42 @@ export interface ApiResponse<T> {
   error: string | null;
   timestamp: string;
 }
+
+// ── Financial Analysis ────────────────────────────────────────────────────────
+
+export interface EarningsEvent {
+  date_str: string | null;
+  days_until: number | null;
+}
+
+export interface QuarterlyResult {
+  period: string;           // YYYY-MM-DD
+  revenue: number | null;
+  gross_profit: number | null;
+  net_income: number | null;
+}
+
+export type TradeReadiness = "GO" | "CAUTION" | "AVOID";
+
+export interface FinancialSummary {
+  symbol: string;
+  name: string;
+  sector: string;
+  industry: string;
+  price: number;
+  market_cap: number | null;
+  pe_ratio: number | null;
+  forward_pe: number | null;
+  revenue_growth_yoy: number | null;
+  net_margin: number | null;
+  debt_to_equity: number | null;
+  free_cash_flow: number | null;
+  analyst_recommendation: string | null;
+  analyst_target_price: number | null;
+  next_earnings: EarningsEvent | null;
+  quarterly_results: QuarterlyResult[];
+  trade_readiness: TradeReadiness;
+  risk_flags: string[];
+  claude_view: string;
+  fetched_at: string;
+}

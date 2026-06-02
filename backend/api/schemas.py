@@ -260,3 +260,40 @@ class AnalyticsSummary(BaseModel):
     capital: CapitalStats
     trades: TradeStats
     suggestions: SuggestionStats
+
+
+# ── Financial Analysis ────────────────────────────────────────────────────────
+
+class EarningsEventOut(BaseModel):
+    date_str: str | None = None
+    days_until: int | None = None
+
+
+class QuarterlyResultOut(BaseModel):
+    period: str
+    revenue: float | None = None
+    gross_profit: float | None = None
+    net_income: float | None = None
+
+
+class FinancialSummaryOut(BaseModel):
+    symbol: str
+    name: str
+    sector: str
+    industry: str
+    price: float
+    market_cap: float | None = None
+    pe_ratio: float | None = None
+    forward_pe: float | None = None
+    revenue_growth_yoy: float | None = None
+    net_margin: float | None = None
+    debt_to_equity: float | None = None
+    free_cash_flow: float | None = None
+    analyst_recommendation: str | None = None
+    analyst_target_price: float | None = None
+    next_earnings: EarningsEventOut | None = None
+    quarterly_results: list[QuarterlyResultOut] = []
+    trade_readiness: str                  # "GO" | "CAUTION" | "AVOID"
+    risk_flags: list[str] = []
+    claude_view: str
+    fetched_at: str

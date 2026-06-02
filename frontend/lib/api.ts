@@ -2,6 +2,7 @@ import useSWR from "swr";
 import type {
   AnalyticsSummary,
   ApiResponse,
+  FinancialSummary,
   OpenTradeResponse,
   PaperTrade,
   PortfolioSnapshot,
@@ -137,6 +138,33 @@ export function useLatestPrices(symbols: string[]) {
     ? `/api/prices/latest?symbols=${symbols.join(",")}`
     : null;
   return useSWR<Record<string, number>>(key, fetcher<Record<string, number>>);
+}
+
+// ── Financial Analysis ────────────────────────────────────────────────────────
+
+/**
+ * Fetch on-demand financial analysis for one symbol.
+ * Pass null to skip (e.g. before the user enters a ticker).
+ * revalidateOnFocus=false because the data is expensive to fetch.
+ */
+export function useFinancials(symbol: string | null) {
+  return useSWR<FinancialSummary>(
+    symbol ? `/api/financials/${symbol.toUpperCase()}` : null,
+    fetcher<FinancialSummary>,
+    { revalidateOnFocus: false },
+  );
+}
+
+/**
+ * Fetch financial analysis for multiple symbols in one batch request.
+ */
+export function useFinancialsBatch(symbols: string[]) {
+  const key = symbols.length > 0
+    ? `/api/financials/?symbols=${symbols.map(s => s.toUpperCase()).join(",")}`
+    : null;
+  return useSWR<FinancialSummary[]>(key, fetcher<FinancialSummary[]>, {
+    revalidateOnFocus: false,
+  });
 }
 
 // ── Stocks ────────────────────────────────────────────────────────────────────

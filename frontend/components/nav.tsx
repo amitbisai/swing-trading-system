@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart2, BookOpen, LineChart } from "lucide-react";
+import { BarChart2, BookOpen, DollarSign, LineChart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
-  { href: "/suggestions", label: "Signals",   Icon: BookOpen   },
-  { href: "/portfolio",   label: "Portfolio",  Icon: LineChart  },
-  { href: "/analytics",   label: "Analytics",  Icon: BarChart2  },
+  { href: "/suggestions", label: "Signals",    Icon: BookOpen    },
+  { href: "/portfolio",   label: "Portfolio",   Icon: LineChart   },
+  { href: "/analytics",   label: "Analytics",   Icon: BarChart2   },
+  { href: "/financials",  label: "Financials",  Icon: DollarSign  },
 ] as const;
 
 export function Nav() {
