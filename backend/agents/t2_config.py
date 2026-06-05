@@ -83,6 +83,17 @@ class T2Config:
     weight_float: float = 5.0
     weight_vol_persistence: float = 10.0
 
+    # ── Falling-knife filter ──────────────────────────────────────────────────
+    # Reject stocks whose price is DOWN more than this % on the scan day.
+    # High RVOL on a falling stock = selling pressure, NOT accumulation.
+    # This is the primary lesson from AMBA and BEAM.
+    max_drop_pct_today: float = 3.0      # allow up to -3% intraday; below = excluded
+
+    # ── Earnings proximity gate (hard exclusion) ───────────────────────────────
+    # Skip any stock with earnings within this many calendar days.
+    # Earnings = overnight gap risk; TA signal irrelevant if stock drops 20%.
+    min_earnings_days_gate: int = 8      # must be ≥8 days until next earnings
+
     # ── OHLCV history window ──────────────────────────────────────────────────
     history_days: int = 260               # ~1 trading year for 200 DMA + 52W high
 
@@ -104,13 +115,15 @@ class T2Config:
             "T2_TIER_B_SCORE":           "tier_b_min_score",
         }
         _int_vars = {
-            "T2_MAX_RESULTS":        "max_results",
-            "T2_MIN_AVG_VOLUME":     "min_avg_volume_30d",
-            "T2_MAX_FLOAT_SHARES":   "max_float_shares",
-            "T2_MIN_FLOAT_SHARES":   "min_float_shares",
-            "T2_MIN_HIGH_RVOL_DAYS": "min_high_rvol_days",
-            "T2_HISTORY_DAYS":       "history_days",
+            "T2_MAX_RESULTS":           "max_results",
+            "T2_MIN_AVG_VOLUME":        "min_avg_volume_30d",
+            "T2_MAX_FLOAT_SHARES":      "max_float_shares",
+            "T2_MIN_FLOAT_SHARES":      "min_float_shares",
+            "T2_MIN_HIGH_RVOL_DAYS":    "min_high_rvol_days",
+            "T2_HISTORY_DAYS":          "history_days",
+            "T2_MIN_EARNINGS_DAYS":     "min_earnings_days_gate",
         }
+        _float_vars["T2_MAX_DROP_PCT_TODAY"] = "max_drop_pct_today"
         _bool_vars = {
             "T2_REQUIRE_ABOVE_50DMA":  "require_above_50dma",
             "T2_REQUIRE_ABOVE_200DMA": "require_above_200dma",
