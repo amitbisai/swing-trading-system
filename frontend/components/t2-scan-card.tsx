@@ -51,10 +51,11 @@ const TIER_CONFIG: Record<T2SignalTier, { label: string; cls: string }> = {
 };
 
 function TierBadge({ tier }: { tier: T2SignalTier }) {
-  const { label, cls } = TIER_CONFIG[tier];
+  // Guard: unknown tier string from old DB rows falls back to Tier C styling
+  const { label, cls } = TIER_CONFIG[tier] ?? TIER_CONFIG.C;
   return (
     <span className={cn("px-2 py-0.5 rounded text-xs font-bold border", cls)}>
-      {label}
+      {label ?? `Tier ${tier}`}
     </span>
   );
 }
@@ -120,7 +121,8 @@ const VERDICT_CONFIG: Record<NewsVerdict, { label: string; dot: string; text: st
 };
 
 function NewsBlock({ summary, verdict }: { summary: string | null; verdict: NewsVerdict | null }) {
-  const cfg = verdict ? VERDICT_CONFIG[verdict] : VERDICT_CONFIG.NEUTRAL;
+  // Guard: DB may contain an unexpected verdict string — fall back to NEUTRAL
+  const cfg = (verdict && VERDICT_CONFIG[verdict]) ? VERDICT_CONFIG[verdict] : VERDICT_CONFIG.NEUTRAL;
   return (
     <div className="pt-3 border-t border-slate-700/60 space-y-1.5">
       <div className="flex items-center gap-1.5">

@@ -290,8 +290,14 @@ function T2ScansTab() {
           <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
-          Failed to load T2 scan data. Check that the backend is running.
+        <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 space-y-2">
+          <p className="text-sm font-medium text-red-400">Failed to load T2 scan data</p>
+          <p className="text-xs text-red-300/80 font-mono break-all">
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+          <p className="text-xs text-red-400/60">
+            Tip: open your backend URL + <code className="text-red-300">/api/t2-scans/count</code> in a browser tab to check DB connectivity.
+          </p>
         </div>
       ) : dates.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center">

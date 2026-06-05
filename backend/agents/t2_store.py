@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from agents.t2_screener import T2Candidate
@@ -116,3 +116,23 @@ async def get_recent_t2_scans(days: int = 30) -> list[T2Scan]:
             .order_by(T2Scan.scan_date.desc(), T2Scan.t2_score.desc())
         )
         return list(rows.scalars().all())
+
+
+async def count_t2_scans(days: int = 30) -> tuple[int, int]:
+    """
+    Returns (total_rows, rows_in_date_range).
+    Used by the diagnostic /api/t2-scans/count endpoint.
+    """
+    cutoff = date.today() - timedelta(days=days)
+    async with async_session_factory() as session:
+        total_result = await session.execute(
+            select(func.count()).select_from(T2Scan)
+        )
+        total: int = total_result.scalar_one()
+
+        in_range_result = await session.execute(
+            select(func.count()).select_from(T2Scan).where(T2Scan.scan_date >= cutoff)
+        )
+        in_range: int = in_range_result.scalar_one()
+
+    return total, in_range
