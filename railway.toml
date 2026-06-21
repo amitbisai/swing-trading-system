@@ -1,2 +1,19 @@
+# Railway deployment configuration for the FastAPI backend.
+# The frontend (Next.js) is deployed separately on Vercel.
+#
+# Railway project structure:
+#   Service 1 — "web"    → this file (FastAPI API server)
+#   Service 2 — "worker" → same repo, start command overridden in Railway UI
+#   Service 3 — "beat"   → same repo, start command overridden in Railway UI
+#   Plugin    — Redis     → add via Railway dashboard (+New → Database → Redis)
+
 [build]
-builder = "dockerfile"
+builder = "nixpacks"
+buildCommand = "cd backend && pip install -e ."
+
+[deploy]
+startCommand = "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
