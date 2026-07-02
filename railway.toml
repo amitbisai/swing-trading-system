@@ -1,18 +1,13 @@
-# Railway deployment configuration for the FastAPI backend.
-# The frontend (Next.js) is deployed separately on Vercel.
+# Railway deployment configuration.
+# Shared build config for all 3 services (they all use this same repo).
+# Each service's Start Command is set individually in the Railway dashboard
+# (Settings → Deploy → Custom Start Command) so they can run different commands:
 #
-# Railway project structure:
-#   Service 1 — "web"    → this file (FastAPI API server)
-#   Service 2 — "worker" → same repo, start command overridden in Railway UI
-#   Service 3 — "beat"   → same repo, start command overridden in Railway UI
-#   Plugin    — Redis     → add via Railway dashboard (+New → Database → Redis)
+#   web            → cd backend && /app/venv/bin/uvicorn main:app --host 0.0.0.0 --port $PORT
+#   agents         → cd backend && /app/venv/bin/python -m agents.orchestrator
+#   ingest-service → cd backend && /app/venv/bin/python -m scheduler.ingest_job
+#
+# The frontend (Next.js) is deployed separately on Vercel.
 
 [build]
 builder = "nixpacks"
-
-[deploy]
-startCommand = "cd backend && /app/venv/bin/uvicorn main:app --host 0.0.0.0 --port $PORT"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3
