@@ -273,6 +273,7 @@ export function ClosedPositionCard({ trade: t }: ClosedPositionCardProps) {
   const exitReasonLabel: Record<string, string> = {
     STOP_HIT:     "Stop hit",
     TARGET_HIT:   "Target hit",
+    TIME_EXIT:    "Time exit",
     MANUAL_CLOSE: "Closed manually",
   };
 

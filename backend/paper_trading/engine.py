@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from config import settings
 from db.models import DailyPrice, DailyPnL, PaperTrade, PortfolioSnapshot, Suggestion
@@ -41,6 +42,7 @@ class UpdateResult:
     trades_closed: int = 0
     stop_hits: int = 0
     target_hits: int = 0
+    time_exits: int = 0
     pnl_rows_written: int = 0
     total_unrealized: Decimal = field(default_factory=lambda: Decimal("0"))
     symbols_missing_price: list[str] = field(default_factory=list)
@@ -49,7 +51,8 @@ class UpdateResult:
         return (
             f"UpdateResult({self.as_of}): "
             f"checked={self.trades_checked} "
-            f"closed={self.trades_closed} (stops={self.stop_hits}, targets={self.target_hits}) "
+            f"closed={self.trades_closed} "
+            f"(stops={self.stop_hits}, targets={self.target_hits}, time={self.time_exits}) "
             f"pnl_rows={self.pnl_rows_written} "
             f"unrealized=${self.total_unrealized:,.2f}"
         )
@@ -167,6 +170,16 @@ async def update_open_trades(as_of: date) -> UpdateResult:
                 direction=trade.direction,
             )
 
+            # Time-based exit: the swing thesis is 3–14 days. A trade that has
+            # neither stopped out nor hit target in max_holding_days is dead
+            # money occupying a slot — close it at the current price.
+            if (
+                exit_reason is None
+                and settings.max_holding_days > 0
+                and (as_of - trade.entry_date).days >= settings.max_holding_days
+            ):
+                exit_reason = "TIME_EXIT"
+
             if exit_reason is not None:
                 # ── Close the trade ───────────────────────────────────────────
                 trade.exit_date = as_of
@@ -183,6 +196,8 @@ async def update_open_trades(as_of: date) -> UpdateResult:
                 result.trades_closed += 1
                 if exit_reason == "STOP_HIT":
                     result.stop_hits += 1
+                elif exit_reason == "TIME_EXIT":
+                    result.time_exits += 1
                 else:
                     result.target_hits += 1
 
@@ -200,12 +215,21 @@ async def update_open_trades(as_of: date) -> UpdateResult:
                 )
                 result.total_unrealized += unrealized
 
-                session.add(DailyPnL(
-                    trade_id=trade.id,
-                    pnl_date=as_of,
-                    close_price=close_price,
-                    unrealized_pnl=unrealized,
-                ))
+                # Upsert (not insert): the hourly intraday job and the nightly
+                # EOD job may both write today's row for the same trade.
+                await session.execute(
+                    pg_insert(DailyPnL)
+                    .values(
+                        trade_id=trade.id,
+                        pnl_date=as_of,
+                        close_price=close_price,
+                        unrealized_pnl=unrealized,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=["trade_id", "pnl_date"],
+                        set_={"close_price": close_price, "unrealized_pnl": unrealized},
+                    )
+                )
                 result.pnl_rows_written += 1
 
         await session.commit()
@@ -214,78 +238,115 @@ async def update_open_trades(as_of: date) -> UpdateResult:
     return result
 
 
-async def get_portfolio_snapshot(as_of: date) -> PortfolioSnapshot:
+async def compute_nav(
+    session,
+    as_of: date,
+    live_prices: dict[str, Decimal] | None = None,
+) -> dict:
     """
-    Compute and persist a PortfolioSnapshot for *as_of*.
+    Compute NAV components without persisting anything.
 
     NAV components:
     - cash_balance          = initial_capital + Σ realized_pnl(all time) − Σ capital_at_risk(open)
     - invested_capital      = Σ capital_at_risk(open trades)
-    - unrealized_pnl        = Σ unrealized from today's DailyPnL rows
+    - unrealized_pnl        = from *live_prices* when given, else today's DailyPnL rows
     - realized_pnl_today    = Σ realized_pnl where exit_date == as_of
     - cumulative_realized   = Σ realized_pnl(all closed trades)
     - total_capital         = cash_balance + invested_capital + unrealized_pnl
                             = initial_capital + cumulative_realized + unrealized_pnl
+
+    When *live_prices* (symbol → price) is supplied, unrealized P&L is computed
+    directly from open positions at those prices — this is what makes the
+    on-demand /portfolio/snapshot endpoint reflect a buy or sell immediately.
     """
-    async with async_session_factory() as session:
-        # Open trades as of today (after update_open_trades has run)
-        open_trades: list[PaperTrade] = list(
-            (await session.execute(
-                select(PaperTrade).where(PaperTrade.is_open == True)
-            )).scalars().all()
-        )
+    open_trades: list[PaperTrade] = list(
+        (await session.execute(
+            select(PaperTrade).where(PaperTrade.is_open == True)
+        )).scalars().all()
+    )
 
-        invested_capital = sum(
-            (t.capital_at_risk for t in open_trades), Decimal("0")
-        )
+    invested_capital = sum(
+        (t.capital_at_risk for t in open_trades), Decimal("0")
+    )
 
-        # Unrealized PnL from today's DailyPnL rows
+    if live_prices is not None:
+        unrealized_pnl = Decimal("0")
+        for t in open_trades:
+            price = live_prices.get(t.symbol)
+            if price is not None:
+                unrealized_pnl += compute_unrealized_pnl(
+                    entry_price=t.entry_price,
+                    current_price=price,
+                    shares=t.shares,
+                    direction=t.direction,
+                )
+    else:
         unrealized_row = (await session.execute(
             select(func.coalesce(func.sum(DailyPnL.unrealized_pnl), Decimal("0")))
             .where(DailyPnL.pnl_date == as_of)
         )).scalar_one()
         unrealized_pnl = Decimal(str(unrealized_row))
 
-        # Realized PnL: today and cumulative
-        realized_today_row = (await session.execute(
-            select(func.coalesce(func.sum(PaperTrade.realized_pnl), Decimal("0")))
-            .where(PaperTrade.exit_date == as_of, PaperTrade.is_open == False)
-        )).scalar_one()
-        realized_pnl_today = Decimal(str(realized_today_row))
+    realized_today_row = (await session.execute(
+        select(func.coalesce(func.sum(PaperTrade.realized_pnl), Decimal("0")))
+        .where(PaperTrade.exit_date == as_of, PaperTrade.is_open == False)
+    )).scalar_one()
+    realized_pnl_today = Decimal(str(realized_today_row))
 
-        cumulative_row = (await session.execute(
-            select(func.coalesce(func.sum(PaperTrade.realized_pnl), Decimal("0")))
-            .where(PaperTrade.is_open == False)
-        )).scalar_one()
-        cumulative_realized_pnl = Decimal(str(cumulative_row))
+    cumulative_row = (await session.execute(
+        select(func.coalesce(func.sum(PaperTrade.realized_pnl), Decimal("0")))
+        .where(PaperTrade.is_open == False)
+    )).scalar_one()
+    cumulative_realized_pnl = Decimal(str(cumulative_row))
 
-        # Cash = starting capital + all realised gains/losses − money currently in trades
-        cash_balance = (
-            settings.initial_capital
-            + cumulative_realized_pnl
-            - invested_capital
+    cash_balance = (
+        settings.initial_capital
+        + cumulative_realized_pnl
+        - invested_capital
+    )
+    total_capital = cash_balance + invested_capital + unrealized_pnl
+
+    return {
+        "snapshot_date": as_of,
+        "total_capital": total_capital,
+        "cash_balance": cash_balance,
+        "invested_capital": invested_capital,
+        "unrealized_pnl": unrealized_pnl,
+        "realized_pnl_today": realized_pnl_today,
+        "cumulative_realized_pnl": cumulative_realized_pnl,
+        "open_positions": len(open_trades),
+    }
+
+
+async def get_portfolio_snapshot(as_of: date) -> PortfolioSnapshot:
+    """
+    Compute and persist (upsert) a PortfolioSnapshot for *as_of*.
+
+    Upsert, not insert: the hourly intraday job and the nightly EOD job may
+    both write the same day's snapshot row.
+    """
+    async with async_session_factory() as session:
+        values = await compute_nav(session, as_of)
+
+        await session.execute(
+            pg_insert(PortfolioSnapshot)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["snapshot_date"],
+                set_={k: v for k, v in values.items() if k != "snapshot_date"},
+            )
         )
-        total_capital = cash_balance + invested_capital + unrealized_pnl
-
-        snapshot = PortfolioSnapshot(
-            snapshot_date=as_of,
-            total_capital=total_capital,
-            cash_balance=cash_balance,
-            invested_capital=invested_capital,
-            unrealized_pnl=unrealized_pnl,
-            realized_pnl_today=realized_pnl_today,
-            cumulative_realized_pnl=cumulative_realized_pnl,
-            open_positions=len(open_trades),
-        )
-        session.add(snapshot)
         await session.commit()
-        await session.refresh(snapshot)
+
+        snapshot = (await session.execute(
+            select(PortfolioSnapshot).where(PortfolioSnapshot.snapshot_date == as_of)
+        )).scalar_one()
 
     logger.info(
         "Snapshot(%s): total=$%s  cash=$%s  invested=$%s  "
         "unrealized=$%s  realized_today=$%s  open=%d",
-        as_of, total_capital, cash_balance, invested_capital,
-        unrealized_pnl, realized_pnl_today, len(open_trades),
+        as_of, values["total_capital"], values["cash_balance"], values["invested_capital"],
+        values["unrealized_pnl"], values["realized_pnl_today"], values["open_positions"],
     )
     return snapshot
 
@@ -319,7 +380,8 @@ async def accept_suggestions(as_of: date) -> int:
 
     opened = 0
     for s in suggestions:
-        if open_count >= settings.max_open_positions:
+        # max_open_positions <= 0 means unlimited
+        if 0 < settings.max_open_positions <= open_count:
             break
         if s.symbol in open_symbols:
             continue

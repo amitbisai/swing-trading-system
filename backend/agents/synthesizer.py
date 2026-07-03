@@ -160,6 +160,7 @@ async def run_synthesizer(
     ta_results: list[TAOutput],
     sentiment_results: list[SentimentOutput],
     pattern_results: list[PatternOutput],
+    regime_ok: bool = True,
 ) -> list[SynthesisOutput]:
 
     llm = ChatAnthropic(model=settings.llm_model, api_key=settings.anthropic_api_key)
@@ -194,7 +195,11 @@ async def run_synthesizer(
             )
             continue
 
-        stop, target = compute_stop_target(bundle.entry_price, bundle.tier, direction)
+        # ATR-based stops: volatile stocks get wider stops, quiet stocks tighter
+        # ones. Falls back to fixed tier percentages when ATR is unavailable.
+        stop, target = compute_stop_target(
+            bundle.entry_price, bundle.tier, direction, atr=ta.atr_14
+        )
         rationale = await _llm_rationale(llm, bundle, ta, sent, pat, direction, confidence)
 
         candidates.append(
@@ -228,13 +233,21 @@ async def run_synthesizer(
         )
 
     as_of = bundles[0].as_of_date if bundles else date.today()
-    await _persist_suggestions(suggestions, as_of)
+    if not regime_ok:
+        logger.warning(
+            "Synthesizer: market regime is BEARISH (SPY < 200DMA) — persisting %d "
+            "suggestion(s) as INACTIVE (visible in UI, excluded from auto-trading)",
+            len(suggestions),
+        )
+    await _persist_suggestions(suggestions, as_of, active=regime_ok)
     return suggestions
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
-async def _persist_suggestions(suggestions: list[SynthesisOutput], as_of: date) -> None:
+async def _persist_suggestions(
+    suggestions: list[SynthesisOutput], as_of: date, active: bool = True
+) -> None:
     async with async_session_factory() as session:
         # Always deactivate previous suggestions when agents run — even if today
         # produced 0 signals.  Skipping this when suggestions is empty caused old
@@ -270,6 +283,7 @@ async def _persist_suggestions(suggestions: list[SynthesisOutput], as_of: date) 
                     ta_score=s.ta_score,
                     sentiment_score=s.sentiment_score,
                     pattern_score=s.pattern_score,
+                    is_active=active,
                 )
             )
 

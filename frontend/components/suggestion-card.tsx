@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TrendingUp, TrendingDown, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, Loader2, CheckCircle, AlertCircle, Flame } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { openTrade } from "@/lib/api";
 import type { Suggestion } from "@/lib/types";
@@ -9,6 +9,8 @@ import type { Suggestion } from "@/lib/types";
 interface Props {
   suggestion: Suggestion;
   currentPrice?: number;
+  /** Distinct days this symbol appeared over the recent window (persistence flag). */
+  persistentDays?: number;
 }
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -38,7 +40,7 @@ function ScorePill({ label, score }: { label: string; score: number }) {
   );
 }
 
-export function SuggestionCard({ suggestion: s, currentPrice }: Props) {
+export function SuggestionCard({ suggestion: s, currentPrice, persistentDays }: Props) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -74,6 +76,16 @@ export function SuggestionCard({ suggestion: s, currentPrice }: Props) {
             {isLong ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
             {s.direction}
           </span>
+          {persistentDays !== undefined && persistentDays >= 3 && (
+            <span
+              className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5
+                         rounded-full bg-orange-900/60 text-orange-400 shrink-0"
+              title={`Surfaced by the system on ${persistentDays} of the last 7 days`}
+            >
+              <Flame className="h-3 w-3" />
+              {persistentDays}d
+            </span>
+          )}
         </div>
         <span
           className={cn(

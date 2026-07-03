@@ -12,7 +12,6 @@ from db.session import get_db
 from paper_trading.engine import open_trade
 from paper_trading.mark_to_market import compute_realized_pnl
 from risk.position_sizing import compute_position_size
-from risk.stop_target import compute_stop_target
 
 router = APIRouter()
 
@@ -97,15 +96,13 @@ async def create_paper_trade(
 
     if latest_price_row is not None:
         entry_price = Decimal(str(latest_price_row))
-        # Recalculate stop/target percentages from the fresh entry price
-        from agents.models import Direction, TradeTier
-        raw_stop, raw_target = compute_stop_target(
-            float(entry_price),
-            TradeTier(suggestion.tier),
-            Direction(suggestion.direction),
-        )
-        stop_price   = Decimal(str(raw_stop))
-        target_price = Decimal(str(raw_target))
+        # Shift the suggestion's stop/target by the same distances relative to
+        # the fresh entry price. This preserves the ATR-derived widths computed
+        # at signal time (recomputing from percentages would discard them).
+        stop_dist    = suggestion.entry_price - suggestion.stop_loss
+        target_dist  = suggestion.target_price - suggestion.entry_price
+        stop_price   = entry_price - stop_dist
+        target_price = entry_price + target_dist
     else:
         entry_price  = suggestion.entry_price
         stop_price   = suggestion.stop_loss

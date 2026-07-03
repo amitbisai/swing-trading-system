@@ -24,8 +24,12 @@ export default function PortfolioPage() {
   const trades = tab === "open" ? openTrades : closedTrades;
 
   const totalCapital = snapshot ? parseFloat(snapshot.total_capital) : null;
-  const initialCapital = 100000; // from env ideally — use 100k as display default
-  const returnPct = totalCapital ? ((totalCapital - initialCapital) / initialCapital) * 100 : null;
+  const initialCapital = snapshot?.initial_capital
+    ? parseFloat(snapshot.initial_capital)
+    : 100000;
+  const returnPct = totalCapital !== null && initialCapital > 0
+    ? ((totalCapital - initialCapital) / initialCapital) * 100
+    : null;
   const isPositive = returnPct !== null && returnPct >= 0;
 
   return (
@@ -40,15 +44,22 @@ export default function PortfolioPage() {
           ))}
         </div>
       ) : snapshot ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <StatCard
-            label="Total Capital"
+            label="Current Capital"
             value={formatCurrency(snapshot.total_capital)}
+            sub={`Started with ${formatCurrency(String(initialCapital))}`}
             mono
           />
           <StatCard
-            label="Cash"
+            label="Cash Available"
             value={formatCurrency(snapshot.cash_balance)}
+            mono
+          />
+          <StatCard
+            label="Invested"
+            value={formatCurrency(snapshot.invested_capital)}
+            sub={`${snapshot.open_positions} position${snapshot.open_positions !== 1 ? "s" : ""}`}
             mono
           />
           <StatCard
@@ -59,7 +70,14 @@ export default function PortfolioPage() {
             mono
           />
           <StatCard
-            label="Return"
+            label="Realized P&L"
+            value={formatCurrency(snapshot.cumulative_realized_pnl)}
+            positive={parseFloat(snapshot.cumulative_realized_pnl) >= 0}
+            negative={parseFloat(snapshot.cumulative_realized_pnl) < 0}
+            mono
+          />
+          <StatCard
+            label="Total Return"
             value={returnPct !== null ? `${isPositive ? "+" : ""}${returnPct.toFixed(2)}%` : "—"}
             positive={isPositive}
             negative={!isPositive && returnPct !== null}

@@ -63,6 +63,7 @@ class OrchestratorState(TypedDict):
     sentiment_results: list[SentimentOutput]
     pattern_results:   list[PatternOutput]
     suggestions:       list[SynthesisOutput]
+    regime_bullish:    bool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -93,6 +94,12 @@ async def scan_node(state: OrchestratorState) -> OrchestratorState:
     scanner_outputs, bundles = await run_scanner()
     state["scanner_outputs"] = scanner_outputs
     state["bundles"] = bundles
+
+    # Market regime check (SPY vs 200DMA) — determines whether today's
+    # suggestions are persisted as active (auto-tradable) or inactive.
+    from risk.regime import is_market_bullish
+    state["regime_bullish"] = await is_market_bullish()
+
     logger.info("scan_node: %d symbols selected", len(bundles))
     return state
 
@@ -189,6 +196,7 @@ async def synthesize_node(state: OrchestratorState) -> OrchestratorState:
         ta_results=state["ta_results"],
         sentiment_results=state["sentiment_results"],
         pattern_results=state["pattern_results"],
+        regime_ok=state.get("regime_bullish", True),
     )
     state["suggestions"] = suggestions
     logger.info("synthesize_node: %d suggestion(s) generated", len(suggestions))
@@ -251,6 +259,7 @@ async def run_orchestrator() -> list[SynthesisOutput]:
         "sentiment_results": [],
         "pattern_results":   [],
         "suggestions":       [],
+        "regime_bullish":    True,
     }
     final_state: OrchestratorState = await graph.ainvoke(initial_state)
     return final_state["suggestions"]

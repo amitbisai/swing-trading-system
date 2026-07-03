@@ -5,7 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.schemas import AnalyticsSummary, ApiResponse, CapitalStats, SuggestionStats, TradeStats
+from api.schemas import (
+    AnalyticsSummary,
+    ApiResponse,
+    CapitalStats,
+    SuggestionStats,
+    TierPerformance,
+    TradeStats,
+)
 from config import settings
 from db.models import PaperTrade, PortfolioSnapshot, Suggestion
 from db.session import get_db
@@ -95,6 +102,31 @@ async def get_summary(db: AsyncSession = Depends(get_db)) -> ApiResponse[Analyti
         cumulative_realized_pnl=cumulative_realized,
     )
 
+    # ── Per-tier performance (join trades to their suggestion's tier) ─────────
+    tier_rows = (await db.execute(
+        select(
+            Suggestion.tier,
+            func.count().label("closed"),
+            func.count().filter(PaperTrade.realized_pnl > 0).label("winners"),
+            func.coalesce(func.sum(PaperTrade.realized_pnl), _ZERO).label("total_pnl"),
+        )
+        .join(Suggestion, PaperTrade.suggestion_id == Suggestion.id)
+        .where(PaperTrade.is_open == False)
+        .group_by(Suggestion.tier)
+        .order_by(Suggestion.tier)
+    )).all()
+
+    tiers = [
+        TierPerformance(
+            tier=row.tier,
+            closed_trades=int(row.closed),
+            winning_trades=int(row.winners),
+            win_rate_pct=round(int(row.winners) / int(row.closed) * 100, 1) if row.closed else 0.0,
+            total_realized_pnl=Decimal(str(row.total_pnl)),
+        )
+        for row in tier_rows
+    ]
+
     # ── Suggestion stats ──────────────────────────────────────────────────────
     suggestion_agg = (await db.execute(
         select(
@@ -116,6 +148,7 @@ async def get_summary(db: AsyncSession = Depends(get_db)) -> ApiResponse[Analyti
             capital=capital,
             trades=trades,
             suggestions=sugg,
+            tiers=tiers,
         ),
         timestamp=_ts(),
     )

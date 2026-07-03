@@ -49,6 +49,8 @@ log = logging.getLogger("run_agents")
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
+    from datetime import date
+
     log.info("=" * 60)
     log.info("Nightly agents run starting")
     log.info("=" * 60)
@@ -75,6 +77,33 @@ async def main() -> None:
 
     if not suggestions:
         log.warning("No suggestions generated — check scanner and synthesizer logs above.")
+
+    # ── Paper trading: auto-entry + EOD processing ─────────────────────────────
+    # accept_suggestions opens trades from today's ACTIVE suggestions (regime
+    # filter marks suggestions inactive on bear days, so nothing opens then).
+    # process_eod marks all open trades to market, applies stop/target/time
+    # exits, and writes the daily portfolio snapshot.
+    from config import settings
+    from paper_trading.engine import accept_suggestions, process_eod
+
+    today = date.today()
+    if settings.auto_entry_mode == "nightly":
+        try:
+            opened = await accept_suggestions(today)
+            log.info("Paper trading: %d new trade(s) opened", opened)
+        except Exception as exc:
+            log.error("accept_suggestions failed: %s", exc, exc_info=True)
+    else:
+        log.info(
+            "Paper trading: auto-entry deferred to the hourly intraday job "
+            "(AUTO_ENTRY_MODE=intraday) — trades will open at live prices next market morning"
+        )
+
+    try:
+        await process_eod(today)
+        log.info("Paper trading: EOD processing + portfolio snapshot complete")
+    except Exception as exc:
+        log.error("process_eod failed: %s", exc, exc_info=True)
 
 
 if __name__ == "__main__":

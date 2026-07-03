@@ -47,6 +47,19 @@ export interface PortfolioSnapshot {
   realized_pnl_today: string;
   cumulative_realized_pnl: string;
   open_positions: number;
+  initial_capital: string | null;
+}
+
+export interface PersistentPick {
+  symbol: string;
+  total_days: number;
+  suggestion_days: number;
+  t2_scan_days: number;
+  window_days: number;
+  last_seen: string;
+  tier: TradeTier | null;
+  latest_confidence: number | null;
+  latest_direction: Direction | null;
 }
 
 export interface CapitalStats {
@@ -75,11 +88,20 @@ export interface SuggestionStats {
   avg_confidence: number;
 }
 
+export interface TierPerformance {
+  tier: string;
+  closed_trades: number;
+  winning_trades: number;
+  win_rate_pct: number;
+  total_realized_pnl: string;
+}
+
 export interface AnalyticsSummary {
   as_of: string;
   capital: CapitalStats;
   trades: TradeStats;
   suggestions: SuggestionStats;
+  tiers: TierPerformance[];
 }
 
 export interface OpenTradeResponse {

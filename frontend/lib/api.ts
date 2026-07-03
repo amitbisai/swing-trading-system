@@ -5,6 +5,7 @@ import type {
   FinancialSummary,
   OpenTradeResponse,
   PaperTrade,
+  PersistentPick,
   PortfolioSnapshot,
   Suggestion,
   T1Scan,
@@ -41,6 +42,17 @@ export function useSuggestions(params: SuggestionParams = {}) {
   if (params.active_only === false) qs.set("active_only", "false");
   const key = `/api/suggestions/?${qs.toString()}`;
   return useSWR<Suggestion[]>(key, fetcher<Suggestion[]>);
+}
+
+/**
+ * Symbols repeatedly surfaced by the system (suggestions + T2 scans) over the
+ * last `window` days. Flagged when seen on >= `minDays` distinct days.
+ */
+export function usePersistentPicks(window = 7, minDays = 3) {
+  return useSWR<PersistentPick[]>(
+    `/api/suggestions/persistent?window=${window}&min_days=${minDays}`,
+    fetcher<PersistentPick[]>,
+  );
 }
 
 export function useSuggestion(id: number | null) {

@@ -4,26 +4,20 @@ import { Loader2 } from "lucide-react";
 import { StatCard } from "@/components/stat-card";
 import { EquityCurveChart } from "@/components/analytics-chart";
 import { TierComparisonChart } from "@/components/tier-comparison";
-import { useAnalyticsSummary, usePortfolioHistory, usePaperTrades } from "@/lib/api";
-import { formatCurrency, formatPct } from "@/lib/utils";
+import { useAnalyticsSummary, usePortfolioHistory } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 
 export default function AnalyticsPage() {
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
   const { data: history, isLoading: historyLoading } = usePortfolioHistory(60);
-  const { data: closedTrades } = usePaperTrades("closed");
 
-  // Compute T1 vs T2 win rate client-side from closed trades + suggestion ids
-  // We don't have tier on PaperTrade, so we rely on summary for aggregate stats
-  // and show a placeholder tier split when we have no tier info.
-  // The tier comparison chart will use the overall win rate for now.
-  const tierStats = (() => {
-    if (!summary) return [];
-    const { win_rate_pct } = summary.trades;
-    return [
-      { tier: "T1" as const, winRate: win_rate_pct, trades: summary.trades.closed_trades },
-      { tier: "T2" as const, winRate: win_rate_pct, trades: 0 },
-    ].filter((s) => s.trades > 0);
-  })();
+  // Real per-tier performance from the backend (trades joined to their
+  // suggestion's tier).
+  const tierStats = (summary?.tiers ?? []).map((t) => ({
+    tier: t.tier as "T1" | "T2",
+    winRate: t.win_rate_pct,
+    trades: t.closed_trades,
+  }));
 
   if (summaryLoading) {
     return (

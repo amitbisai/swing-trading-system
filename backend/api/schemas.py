@@ -102,6 +102,7 @@ class PortfolioSnapshotOut(BaseModel):
     realized_pnl_today: Decimal
     cumulative_realized_pnl: Decimal
     open_positions: int
+    initial_capital: Decimal | None = None   # settings value, for return calc
 
     model_config = {"from_attributes": True}
 
@@ -132,6 +133,19 @@ class SuggestionStats(BaseModel):
     total_suggestions: int
     suggestions_today: int
     avg_confidence: float
+
+
+class PersistentPickOut(BaseModel):
+    """A symbol repeatedly surfaced by the system over the recent window."""
+    symbol: str
+    total_days: int          # distinct days seen across suggestions + T2 scans
+    suggestion_days: int     # days it appeared as a final suggestion
+    t2_scan_days: int        # days it passed the T2 screener
+    window_days: int         # look-back window used
+    last_seen: date
+    tier: str | None = None              # from most recent suggestion, if any
+    latest_confidence: int | None = None
+    latest_direction: str | None = None
 
 
 class T2ScanOut(BaseModel):
@@ -255,11 +269,20 @@ class T1ScanOut(BaseModel):
         )
 
 
+class TierPerformance(BaseModel):
+    tier: str                   # T1 | T2
+    closed_trades: int
+    winning_trades: int
+    win_rate_pct: float
+    total_realized_pnl: Decimal
+
+
 class AnalyticsSummary(BaseModel):
     as_of: date
     capital: CapitalStats
     trades: TradeStats
     suggestions: SuggestionStats
+    tiers: list[TierPerformance] = []
 
 
 # ── Financial Analysis ────────────────────────────────────────────────────────

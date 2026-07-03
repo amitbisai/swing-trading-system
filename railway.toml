@@ -4,8 +4,11 @@
 # (Settings → Deploy → Custom Start Command) so they can run different commands:
 #
 #   web            → cd backend && /app/venv/bin/uvicorn main:app --host 0.0.0.0 --port $PORT
-#   agents         → cd backend && /app/venv/bin/python -m agents.orchestrator
-#   ingest-service → cd backend && /app/venv/bin/python -m scheduler.ingest_job
+#   agents         → python backend/jobs/run_agents.py        (Dockerfile.agents, cron 0 22 * * 1-5)
+#   ingest-service → python backend/jobs/ingest.py            (Dockerfile.railway, cron 30 21 * * 1-5)
+#   intraday       → python backend/jobs/intraday_update.py   (Dockerfile.agents, cron 30 13-20 * * 1-5)
+#                    hourly during US market hours: auto-entry at live prices,
+#                    stop/target/time exits, near-live portfolio mark-to-market
 #
 # The frontend (Next.js) is deployed separately on Vercel.
 

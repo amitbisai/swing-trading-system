@@ -4,9 +4,9 @@ import { useState } from "react";
 import { SuggestionCard } from "@/components/suggestion-card";
 import { T1ScanCard } from "@/components/t1-scan-card";
 import { T2ScanCard } from "@/components/t2-scan-card";
-import { useSuggestions, useT1Scans, useT2Scans, useLatestPrices } from "@/lib/api";
+import { usePersistentPicks, useSuggestions, useT1Scans, useT2Scans, useLatestPrices } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Flame, Loader2, RefreshCw } from "lucide-react";
 
 type Tier = "T1" | "T2" | "";
 type Dir  = "LONG" | "SHORT" | "";
@@ -34,6 +34,51 @@ function FilterPill<T extends string>({
   );
 }
 
+// ── Persistent picks strip ────────────────────────────────────────────────────
+// Symbols the system keeps surfacing (suggestions + T2 scans) — repeated
+// appearance across independent daily scans is the strongest conviction signal.
+
+function PersistentPicksStrip() {
+  const { data: picks } = usePersistentPicks();
+  if (!picks?.length) return null;
+
+  return (
+    <div className="rounded-xl border border-orange-900/50 bg-orange-950/20 p-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <Flame className="h-4 w-4 text-orange-400" />
+        <span className="text-xs font-semibold text-orange-300 uppercase tracking-wide">
+          Repeat picks — surfaced 3+ days this week
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {picks.map((p) => (
+          <div
+            key={p.symbol}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-800/80 border border-slate-700 px-2.5 py-1.5"
+            title={`Suggestions: ${p.suggestion_days}d · T2 screen: ${p.t2_scan_days}d · last seen ${p.last_seen}`}
+          >
+            <span className="text-sm font-bold text-white">{p.symbol}</span>
+            <span className="text-[10px] font-mono text-orange-400">
+              {p.total_days}/{p.window_days}d
+            </span>
+            {p.latest_direction && (
+              <span className={cn(
+                "text-[10px] font-semibold",
+                p.latest_direction === "LONG" ? "text-emerald-400" : "text-red-400",
+              )}>
+                {p.latest_direction}
+              </span>
+            )}
+            {p.latest_confidence != null && (
+              <span className="text-[10px] font-mono text-slate-400">{p.latest_confidence}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Signals tab ───────────────────────────────────────────────────────────────
 
 function SignalsTab() {
@@ -49,9 +94,14 @@ function SignalsTab() {
 
   const symbols = data?.map((s) => s.symbol) ?? [];
   const { data: prices } = useLatestPrices(symbols);
+  const { data: persistentPicks } = usePersistentPicks();
+  const persistentBySymbol = new Map(
+    (persistentPicks ?? []).map((p) => [p.symbol, p.total_days]),
+  );
 
   return (
     <div className="space-y-4">
+      <PersistentPicksStrip />
       {/* filters */}
       <div className="flex flex-wrap gap-2 items-center">
         <FilterPill<Tier> label="T1" value="T1" active={tier === "T1"} onClick={setTier} />
@@ -101,6 +151,7 @@ function SignalsTab() {
               key={s.id}
               suggestion={s}
               currentPrice={prices?.[s.symbol]}
+              persistentDays={persistentBySymbol.get(s.symbol)}
             />
           ))}
         </div>
