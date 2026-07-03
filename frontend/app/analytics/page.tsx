@@ -1,11 +1,96 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Loader2, Settings2 } from "lucide-react";
 import { StatCard } from "@/components/stat-card";
 import { EquityCurveChart } from "@/components/analytics-chart";
 import { TierComparisonChart } from "@/components/tier-comparison";
-import { useAnalyticsSummary, usePortfolioHistory } from "@/lib/api";
+import {
+  updateStrategySettings,
+  useAnalyticsSummary,
+  usePortfolioHistory,
+  useStrategySettings,
+} from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+
+// ── Strategy settings (top-N daily entry cap) ─────────────────────────────────
+
+function StrategySettingsCard() {
+  const { data: current, mutate } = useStrategySettings();
+  const [value, setValue] = useState<string>("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (current) setValue(String(current.max_entries_per_day));
+  }, [current]);
+
+  async function handleSave() {
+    const n = parseInt(value, 10);
+    if (isNaN(n) || n < 0 || n > 100) {
+      setErrorMsg("Enter a number between 0 and 100 (0 = unlimited).");
+      setStatus("error");
+      return;
+    }
+    setStatus("saving");
+    setErrorMsg("");
+    try {
+      await updateStrategySettings({ max_entries_per_day: n });
+      await mutate();
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 2000);
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "Failed to save.");
+      setStatus("error");
+    }
+  }
+
+  const dirty = current !== undefined && value !== String(current.max_entries_per_day);
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">Strategy</h2>
+      <div className="rounded-xl border border-slate-700 bg-slate-800 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Settings2 className="h-4 w-4 text-slate-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white">Top-N trades per day</p>
+            <p className="text-xs text-slate-500">
+              Auto-entry takes only the N highest-confidence signals each day. 0 = unlimited.
+            </p>
+          </div>
+          <input
+            type="number" min={0} max={100} step={1}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-16 bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5
+                       text-sm font-mono text-white text-center focus:outline-none
+                       focus:border-slate-400 [appearance:textfield]
+                       [&::-webkit-outer-spin-button]:appearance-none
+                       [&::-webkit-inner-spin-button]:appearance-none"
+            disabled={status === "saving" || current === undefined}
+          />
+          <button
+            onClick={handleSave}
+            disabled={!dirty || status === "saving"}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700
+                       hover:bg-slate-600 text-white transition-colors
+                       disabled:opacity-40 disabled:cursor-not-allowed
+                       flex items-center gap-1.5"
+          >
+            {status === "saving" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : status === "saved" ? (
+              <Check className="h-3.5 w-3.5 text-emerald-400" />
+            ) : null}
+            {status === "saved" ? "Saved" : "Save"}
+          </button>
+        </div>
+        {status === "error" && <p className="text-xs text-red-400">{errorMsg}</p>}
+      </div>
+    </section>
+  );
+}
 
 export default function AnalyticsPage() {
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
@@ -30,6 +115,9 @@ export default function AnalyticsPage() {
   return (
     <div className="px-4 py-5 max-w-2xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-white">Analytics</h1>
+
+      {/* ── Strategy settings ── */}
+      <StrategySettingsCard />
 
       {/* ── Capital stats ── */}
       {summary && (

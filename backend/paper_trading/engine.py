@@ -355,10 +355,15 @@ async def get_portfolio_snapshot(as_of: date) -> PortfolioSnapshot:
 
 async def accept_suggestions(as_of: date) -> int:
     """
-    Open paper trades for today's suggestions, respecting position limits.
-    Skips symbols already held and fills up to max_open_positions.
-    Returns number of new trades opened.
+    Open paper trades for today's suggestions, top-N by confidence.
+    Skips symbols already held. Returns number of new trades opened.
+
+    Entry discipline: at most `max_entries_per_day` new trades per day
+    (runtime-overridable from the Analytics page via app_settings), counting
+    trades already entered today so re-runs stay idempotent.
     """
+    from db.app_settings import get_int_setting
+
     async with async_session_factory() as session:
         open_trades: list[PaperTrade] = list(
             (await session.execute(
@@ -367,6 +372,11 @@ async def accept_suggestions(as_of: date) -> int:
         )
         open_symbols = {t.symbol for t in open_trades}
         open_count = len(open_trades)
+
+        entered_today = (await session.execute(
+            select(func.count()).select_from(PaperTrade)
+            .where(PaperTrade.entry_date == as_of)
+        )).scalar_one()
 
         suggestions: list[Suggestion] = list(
             (await session.execute(
@@ -378,10 +388,19 @@ async def accept_suggestions(as_of: date) -> int:
 
         capital = await _current_capital(session)
 
+    max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
+
     opened = 0
     for s in suggestions:
         # max_open_positions <= 0 means unlimited
         if 0 < settings.max_open_positions <= open_count:
+            break
+        # top-N daily entry cap (0 = unlimited)
+        if 0 < max_daily <= entered_today + opened:
+            logger.info(
+                "accept_suggestions: daily entry cap reached (%d) — skipping remaining signals",
+                max_daily,
+            )
             break
         if s.symbol in open_symbols:
             continue

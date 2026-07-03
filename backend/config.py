@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # 0 = unlimited open positions
     max_open_positions: int = 0
 
+    # Max NEW trades opened per day, ranked by confidence (top-N discipline —
+    # 20-25 daily signals mostly measure market beta; taking only the best few
+    # is what differentiates). Overridable at runtime via the app_settings
+    # table (set from the Analytics page). 0 = unlimited.
+    max_entries_per_day: int = 5
+
     # ATR-based stops/targets (primary sizing when ATR is available)
     atr_stop_mult: float = 1.5     # stop  = entry ∓ 1.5 × ATR(14)
     atr_target_mult: float = 3.0   # target = entry ± 3.0 × ATR(14)  (2:1 reward:risk)

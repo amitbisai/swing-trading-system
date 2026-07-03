@@ -125,6 +125,32 @@ export function useAnalyticsSummary() {
   );
 }
 
+// ── Strategy settings ─────────────────────────────────────────────────────────
+
+export interface StrategySettings {
+  max_entries_per_day: number;   // 0 = unlimited
+}
+
+export function useStrategySettings() {
+  return useSWR<StrategySettings>(
+    "/api/strategy-settings/",
+    fetcher<StrategySettings>,
+  );
+}
+
+export async function updateStrategySettings(
+  settings: StrategySettings,
+): Promise<StrategySettings> {
+  const res = await fetch(`${API_BASE}/api/strategy-settings/`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  const json: ApiResponse<StrategySettings> = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return json.data;
+}
+
 // ── T1 Scans ──────────────────────────────────────────────────────────────────
 
 /**

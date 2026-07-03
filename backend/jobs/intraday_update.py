@@ -130,13 +130,27 @@ async def _fetch_live_prices(symbols: list[str]) -> dict[str, Decimal]:
 # ── Auto-entry ─────────────────────────────────────────────────────────────────
 
 async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
-    """Open trades for today's active suggestions not already held."""
+    """
+    Open trades for today's active suggestions not already held, top-N by
+    confidence (max_entries_per_day, runtime-set from the Analytics page).
+    Counts trades already entered today, so successive hourly runs never
+    exceed the daily cap.
+    """
+    from sqlalchemy import func
+
+    from db.app_settings import get_int_setting
+
     async with async_session_factory() as session:
         open_rows = (await session.execute(
             select(PaperTrade.symbol).where(PaperTrade.is_open == True)
         )).all()
         open_symbols = {r[0] for r in open_rows}
         open_count = len(open_rows)
+
+        entered_today = (await session.execute(
+            select(func.count()).select_from(PaperTrade)
+            .where(PaperTrade.entry_date == today)
+        )).scalar_one()
 
         suggestions: list[Suggestion] = list(
             (await session.execute(
@@ -148,9 +162,14 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
 
         capital = await _current_capital(session)
 
+    max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
+
     opened = 0
     for s in suggestions:
         if 0 < settings.max_open_positions <= open_count:
+            break
+        if 0 < max_daily <= entered_today + opened:
+            log.info("Auto-entry: daily entry cap reached (%d) — done for today", max_daily)
             break
         if s.symbol in open_symbols:
             continue
