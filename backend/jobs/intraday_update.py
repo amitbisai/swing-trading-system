@@ -163,6 +163,7 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
     ]
 
     opened_t1 = 0
+    opened_t2 = 0
     opened_total = 0
     spent = Decimal("0")
     for s in ordered:
@@ -170,6 +171,13 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
         if 0 < settings.max_open_positions <= open_count:
             break
         if s.symbol in open_symbols:
+            continue
+        # Hard daily ceiling on count-exempt T2 entries (safety net)
+        if is_t2 and 0 < settings.max_t2_entries_per_day <= plan.t2_entered_today + opened_t2:
+            log.info(
+                "Auto-entry: T2 daily hard cap reached (%d) — skipping %s",
+                settings.max_t2_entries_per_day, s.symbol,
+            )
             continue
 
         cash_cap = per_trade_cash_cap(plan, opened_t1, spent, count_exempt=is_t2)
@@ -206,7 +214,9 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
             open_symbols.add(s.symbol)
             open_count += 1
             opened_total += 1
-            if not is_t2:
+            if is_t2:
+                opened_t2 += 1
+            else:
                 opened_t1 += 1
             spent += trade.capital_at_risk
             log.info(

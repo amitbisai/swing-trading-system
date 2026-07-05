@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # table (set from the Analytics page). 0 = unlimited.
     max_entries_per_day: int = 5
 
+    # Hard daily ceiling for count-exempt T2 entries — a safety net in case
+    # the screener has an unusually noisy day. 0 = unlimited.
+    max_t2_entries_per_day: int = 5
+
     # ATR-based stops/targets (primary sizing when ATR is available)
     atr_stop_mult: float = 1.5     # stop  = entry ∓ 1.5 × ATR(14)
     atr_target_mult: float = 3.0   # target = entry ± 3.0 × ATR(14)  (2:1 reward:risk)

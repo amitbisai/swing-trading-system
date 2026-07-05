@@ -362,11 +362,12 @@ class EntryPlan:
     as_of: date
     capital: Decimal
     cash: Decimal
-    entered_today: int
+    entered_today: int               # T1-tier trades entered today (count slots)
     deployed_today: Decimal          # Σ capital_at_risk of trades entered today
     allowed_today: int               # pulse-scaled top-N for today
     pulse_score: int
     pulse_label: str
+    t2_entered_today: int = 0        # T2-tier trades entered today (hard cap)
 
 
 async def plan_entries(session, as_of: date) -> EntryPlan:
@@ -387,6 +388,12 @@ async def plan_entries(session, as_of: date) -> EntryPlan:
         select(func.count()).select_from(PaperTrade)
         .join(Suggestion, PaperTrade.suggestion_id == Suggestion.id)
         .where(PaperTrade.entry_date == as_of, Suggestion.tier != "T2")
+    )).scalar_one()
+
+    t2_entered_today = (await session.execute(
+        select(func.count()).select_from(PaperTrade)
+        .join(Suggestion, PaperTrade.suggestion_id == Suggestion.id)
+        .where(PaperTrade.entry_date == as_of, Suggestion.tier == "T2")
     )).scalar_one()
 
     deployed_row = (await session.execute(
@@ -413,6 +420,7 @@ async def plan_entries(session, as_of: date) -> EntryPlan:
         allowed_today=allowed,
         pulse_score=pulse.score,
         pulse_label=pulse.label,
+        t2_entered_today=int(t2_entered_today),
     )
 
 
@@ -487,6 +495,7 @@ async def accept_suggestions(as_of: date) -> int:
     ]
 
     opened_t1 = 0
+    opened_t2 = 0
     opened_total = 0
     spent = Decimal("0")
     for s in ordered:
@@ -495,6 +504,13 @@ async def accept_suggestions(as_of: date) -> int:
         if 0 < settings.max_open_positions <= open_count:
             break
         if s.symbol in open_symbols:
+            continue
+        # Hard daily ceiling on count-exempt T2 entries (safety net)
+        if is_t2 and 0 < settings.max_t2_entries_per_day <= plan.t2_entered_today + opened_t2:
+            logger.info(
+                "accept_suggestions: T2 daily hard cap reached (%d) — skipping %s",
+                settings.max_t2_entries_per_day, s.symbol,
+            )
             continue
 
         cash_cap = per_trade_cash_cap(plan, opened_t1, spent, count_exempt=is_t2)
@@ -519,7 +535,9 @@ async def accept_suggestions(as_of: date) -> int:
             open_symbols.add(s.symbol)
             open_count += 1
             opened_total += 1
-            if not is_t2:
+            if is_t2:
+                opened_t2 += 1
+            else:
                 opened_t1 += 1
             spent += trade.capital_at_risk
 
