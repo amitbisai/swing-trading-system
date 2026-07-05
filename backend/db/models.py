@@ -127,10 +127,16 @@ class PaperTrade(Base):
     exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
     exit_reason: Mapped[str | None] = mapped_column(
-        String(20), nullable=True  # STOP_HIT | TARGET_HIT | MANUAL | EXPIRED
+        String(20), nullable=True  # STOP_HIT | TARGET_HIT | TIME_EXIT | MANUAL
     )
     realized_pnl: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Dynamic exit management (nightly trade manager)
+    original_stop: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    original_target: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    levels_updated_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    adjustment_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

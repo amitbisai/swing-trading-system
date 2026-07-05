@@ -33,6 +33,10 @@ def _to_out(r: PaperTrade) -> PaperTradeOut:
         exit_reason=r.exit_reason,
         realized_pnl=r.realized_pnl,
         is_open=r.is_open,
+        original_stop=r.original_stop,
+        original_target=r.original_target,
+        levels_updated_at=r.levels_updated_at,
+        adjustment_note=r.adjustment_note,
     )
 
 

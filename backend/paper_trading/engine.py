@@ -101,6 +101,9 @@ async def open_trade(
             capital_at_risk=capital_at_risk,
             stop_loss=effective_stop,
             target_price=effective_target,
+            # entry-time levels preserved for the dynamic-exit UI comparison
+            original_stop=effective_stop,
+            original_target=effective_target,
             is_open=True,
         )
         session.add(trade)
@@ -422,10 +425,16 @@ async def accept_suggestions(as_of: date) -> int:
 
 async def process_eod(as_of: date) -> None:
     """
-    Convenience wrapper: update_open_trades → get_portfolio_snapshot.
-    Called by the Celery nightly task after accept_suggestions.
+    Nightly EOD sequence: exits → dynamic exit management → snapshot.
+
+    update_open_trades applies stop/target/time exits at EOD prices; the
+    trade manager then reassesses the survivors (trail stops, extend targets
+    on strong trends); finally the portfolio snapshot is written.
     """
+    from paper_trading.trade_manager import manage_open_trades
+
     await update_open_trades(as_of)
+    await manage_open_trades(as_of)
     await get_portfolio_snapshot(as_of)
 
 

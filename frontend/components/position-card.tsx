@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn, formatCurrency } from "@/lib/utils";
-import { TrendingUp, TrendingDown, Clock, X, Check, Loader2, ArrowRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Clock, X, Check, Loader2, ArrowRight, MoveUpRight } from "lucide-react";
 import type { PaperTrade } from "@/lib/types";
 import { closeTrade } from "@/lib/api";
 
@@ -98,12 +98,19 @@ export function PositionCard({ trade: t, currentPrice, onClosed }: PositionCardP
     ? (isLong ? previewEp - entry : entry - previewEp) * t.shares
     : null;
 
+  const levelsAdjusted = t.levels_updated_at != null;
+
   return (
-    <article className="rounded-xl border border-slate-700 bg-slate-800 p-4 space-y-3">
+    <article className={cn(
+      "rounded-xl border p-4 space-y-3",
+      levelsAdjusted
+        ? "border-sky-700/70 bg-slate-800 ring-1 ring-sky-800/40"
+        : "border-slate-700 bg-slate-800",
+    )}>
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <span className="text-lg font-bold text-white truncate">{t.symbol}</span>
           <span className={cn(
             "flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full shrink-0",
@@ -112,6 +119,16 @@ export function PositionCard({ trade: t, currentPrice, onClosed }: PositionCardP
             {isLong ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
             {t.direction}
           </span>
+          {levelsAdjusted && (
+            <span
+              className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5
+                         rounded-full bg-sky-900/60 text-sky-300 shrink-0"
+              title={t.adjustment_note ?? undefined}
+            >
+              <MoveUpRight className="h-3 w-3" />
+              Levels updated
+            </span>
+          )}
         </div>
         <div className="text-right shrink-0">
           <p className="text-xs text-slate-500">Shares</p>
@@ -151,12 +168,30 @@ export function PositionCard({ trade: t, currentPrice, onClosed }: PositionCardP
         <div className="rounded-lg bg-slate-900 p-2">
           <p className="text-[10px] text-slate-500 mb-0.5">Stop</p>
           <p className="font-mono text-sm text-red-400">{formatCurrency(t.stop_loss)}</p>
+          {levelsAdjusted && t.original_stop && t.original_stop !== t.stop_loss && (
+            <p className="font-mono text-[10px] text-slate-600 line-through">
+              {formatCurrency(t.original_stop)}
+            </p>
+          )}
         </div>
         <div className="rounded-lg bg-slate-900 p-2">
           <p className="text-[10px] text-slate-500 mb-0.5">Target</p>
           <p className="font-mono text-sm text-emerald-400">{formatCurrency(t.target_price)}</p>
+          {levelsAdjusted && t.original_target && t.original_target !== t.target_price && (
+            <p className="font-mono text-[10px] text-slate-600 line-through">
+              {formatCurrency(t.original_target)}
+            </p>
+          )}
         </div>
       </div>
+
+      {/* ── Adjustment note ── */}
+      {levelsAdjusted && t.adjustment_note && (
+        <p className="text-[11px] text-sky-300/80 bg-sky-950/30 border border-sky-900/40 rounded-lg px-2.5 py-1.5">
+          {t.adjustment_note}
+          <span className="text-sky-500/60"> · {t.levels_updated_at}</span>
+        </p>
+      )}
 
       {/* ── R:R progress bar with current price marker ── */}
       <div className="space-y-1.5">

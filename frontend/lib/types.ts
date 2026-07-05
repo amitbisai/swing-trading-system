@@ -36,6 +36,10 @@ export interface PaperTrade {
   exit_reason: string | null;
   realized_pnl: string | null;
   is_open: boolean;
+  original_stop: string | null;
+  original_target: string | null;
+  levels_updated_at: string | null;
+  adjustment_note: string | null;
 }
 
 export interface PortfolioSnapshot {

@@ -65,6 +65,11 @@ class PaperTradeOut(BaseModel):
     exit_reason: str | None = None
     realized_pnl: Decimal | None = None
     is_open: bool
+    # Dynamic exit management
+    original_stop: Decimal | None = None
+    original_target: Decimal | None = None
+    levels_updated_at: date | None = None
+    adjustment_note: str | None = None
 
     model_config = {"from_attributes": True}
 

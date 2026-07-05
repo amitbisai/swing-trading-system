@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # (~10 trading days — matches the 3–14 day swing thesis). 0 disables.
     max_holding_days: int = 14
 
+    # Dynamic exits (nightly trade manager): when an open position is in
+    # profit and its trend is intact, extend the target and ratchet the stop.
+    dynamic_exits_enabled: bool = True
+    trail_stop_atr_mult: float = 3.0      # chandelier: highest close − 3 × ATR
+    target_extend_atr_mult: float = 2.0   # extended target = close + 2 × ATR
+    breakeven_after_r: float = 1.0        # move stop to entry once up ≥ 1R
+
     # Market regime filter: suppress new entries when SPY < its 200-day SMA
     regime_filter_enabled: bool = True
     regime_symbol: str = "SPY"
