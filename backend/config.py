@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     #   available cash so the account never goes negative).
     risk_per_trade_pct: float = 0.01   # 1% of capital at risk per trade
     max_position_pct: float = 0.15     # max 15% of capital in one position
+
+    # Capital pacing — keeps the account from ever being unable to trade:
+    #   at most max_daily_deployment_pct of capital is put to work per day,
+    #   and cash is never allowed below min_cash_reserve_pct of capital.
+    #   The daily budget is split across the day's remaining allowed entries.
+    max_daily_deployment_pct: float = 0.25
+    min_cash_reserve_pct: float = 0.10
     # 0 = unlimited open positions
     max_open_positions: int = 0
 

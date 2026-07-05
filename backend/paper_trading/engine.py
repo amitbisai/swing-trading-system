@@ -354,6 +354,88 @@ async def get_portfolio_snapshot(as_of: date) -> PortfolioSnapshot:
     return snapshot
 
 
+# ── Entry planning (market pulse + capital pacing) ────────────────────────────
+
+@dataclass
+class EntryPlan:
+    """Everything the entry loops need to pace new positions for one day."""
+    as_of: date
+    capital: Decimal
+    cash: Decimal
+    entered_today: int
+    deployed_today: Decimal          # Σ capital_at_risk of trades entered today
+    allowed_today: int               # pulse-scaled top-N for today
+    pulse_score: int
+    pulse_label: str
+
+
+async def plan_entries(session, as_of: date) -> EntryPlan:
+    """
+    Build today's entry plan:
+      - live NAV (capital + cash)
+      - how many trades were already entered today and what they cost
+      - today's allowed entry count = user's top-N cap scaled by market pulse
+    """
+    from db.app_settings import get_int_setting
+    from risk.market_pulse import entries_allowed, get_market_pulse
+
+    nav = await compute_nav(session, as_of)
+
+    entered_today = (await session.execute(
+        select(func.count()).select_from(PaperTrade)
+        .where(PaperTrade.entry_date == as_of)
+    )).scalar_one()
+
+    deployed_row = (await session.execute(
+        select(func.coalesce(func.sum(PaperTrade.capital_at_risk), Decimal("0")))
+        .where(PaperTrade.entry_date == as_of)
+    )).scalar_one()
+
+    max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
+    pulse = await get_market_pulse()
+    allowed = entries_allowed(max_daily, pulse.score)
+
+    logger.info(
+        "Entry plan(%s): pulse=%d/100 (%s) → %d of %d entries allowed  "
+        "(entered=%d, deployed=$%s)",
+        as_of, pulse.score, pulse.label, allowed, max_daily,
+        entered_today, deployed_row,
+    )
+    return EntryPlan(
+        as_of=as_of,
+        capital=nav["total_capital"],
+        cash=nav["cash_balance"],
+        entered_today=int(entered_today),
+        deployed_today=Decimal(str(deployed_row)),
+        allowed_today=allowed,
+        pulse_score=pulse.score,
+        pulse_label=pulse.label,
+    )
+
+
+def per_trade_cash_cap(plan: EntryPlan, opened: int, spent: Decimal) -> Decimal:
+    """
+    Cash available for the NEXT entry, respecting all pacing rules:
+      - daily deployment budget (max_daily_deployment_pct of capital),
+        split evenly across today's remaining allowed entries
+      - cash reserve floor (min_cash_reserve_pct of capital never invested)
+    Returns <= 0 when no further entry should be made today.
+    """
+    entries_remaining = plan.allowed_today - plan.entered_today - opened
+    if entries_remaining <= 0:
+        return Decimal("0")
+
+    daily_budget = (
+        plan.capital * Decimal(str(settings.max_daily_deployment_pct))
+        - plan.deployed_today - spent
+    )
+    reserve = plan.capital * Decimal(str(settings.min_cash_reserve_pct))
+    cash_available = plan.cash - spent - reserve
+
+    per_entry_budget = daily_budget / Decimal(entries_remaining)
+    return min(per_entry_budget, cash_available)
+
+
 # ── Higher-level orchestration helper ─────────────────────────────────────────
 
 async def accept_suggestions(as_of: date) -> int:
@@ -365,8 +447,6 @@ async def accept_suggestions(as_of: date) -> int:
     (runtime-overridable from the Analytics page via app_settings), counting
     trades already entered today so re-runs stay idempotent.
     """
-    from db.app_settings import get_int_setting
-
     async with async_session_factory() as session:
         open_trades: list[PaperTrade] = list(
             (await session.execute(
@@ -376,11 +456,6 @@ async def accept_suggestions(as_of: date) -> int:
         open_symbols = {t.symbol for t in open_trades}
         open_count = len(open_trades)
 
-        entered_today = (await session.execute(
-            select(func.count()).select_from(PaperTrade)
-            .where(PaperTrade.entry_date == as_of)
-        )).scalar_one()
-
         suggestions: list[Suggestion] = list(
             (await session.execute(
                 select(Suggestion)
@@ -389,29 +464,27 @@ async def accept_suggestions(as_of: date) -> int:
             )).scalars().all()
         )
 
-        nav = await compute_nav(session, as_of)
-        capital = nav["total_capital"]
-        cash = nav["cash_balance"]
-
-    max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
+        plan = await plan_entries(session, as_of)
 
     opened = 0
+    spent = Decimal("0")
     for s in suggestions:
         # max_open_positions <= 0 means unlimited
         if 0 < settings.max_open_positions <= open_count:
             break
-        # top-N daily entry cap (0 = unlimited)
-        if 0 < max_daily <= entered_today + opened:
-            logger.info(
-                "accept_suggestions: daily entry cap reached (%d) — skipping remaining signals",
-                max_daily,
-            )
-            break
         if s.symbol in open_symbols:
             continue
 
+        cash_cap = per_trade_cash_cap(plan, opened, spent)
+        if cash_cap <= 0:
+            logger.info(
+                "accept_suggestions: entry budget exhausted (pulse %d/100 → %d allowed) — done",
+                plan.pulse_score, plan.allowed_today,
+            )
+            break
+
         shares = compute_position_size(
-            capital, s.entry_price, s.stop_loss, available_cash=cash
+            plan.capital, s.entry_price, s.stop_loss, available_cash=cash_cap
         )
         if shares == 0:
             logger.debug("accept_suggestions: zero shares computed for %s — skipping", s.symbol)
@@ -422,9 +495,9 @@ async def accept_suggestions(as_of: date) -> int:
             open_symbols.add(s.symbol)
             open_count += 1
             opened += 1
-            cash -= trade.capital_at_risk   # keep later entries within remaining cash
+            spent += trade.capital_at_risk
 
-    logger.info("accept_suggestions(%s): opened %d trade(s)", as_of, opened)
+    logger.info("accept_suggestions(%s): opened %d trade(s), deployed $%s", as_of, opened, spent)
     return opened
 
 

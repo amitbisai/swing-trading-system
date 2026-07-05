@@ -151,6 +151,27 @@ export async function updateStrategySettings(
   return json.data;
 }
 
+// ── Market pulse ──────────────────────────────────────────────────────────────
+
+export interface MarketPulse {
+  score: number;
+  label: "STRONG" | "UPTREND" | "NEUTRAL" | "WEAK" | "AVOID";
+  entries_allowed: number;        // -1 = unlimited
+  max_entries_per_day: number;
+  spy_close: number | null;
+  spy_sma50: number | null;
+  spy_sma200: number | null;
+  breadth_pct: number | null;
+}
+
+export function useMarketPulse() {
+  return useSWR<MarketPulse>(
+    "/api/analytics/market-pulse",
+    fetcher<MarketPulse>,
+    { revalidateOnFocus: false, dedupingInterval: 300_000 },
+  );
+}
+
 // ── T1 Scans ──────────────────────────────────────────────────────────────────
 
 /**

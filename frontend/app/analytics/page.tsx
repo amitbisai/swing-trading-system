@@ -8,12 +8,49 @@ import { TierComparisonChart } from "@/components/tier-comparison";
 import {
   updateStrategySettings,
   useAnalyticsSummary,
+  useMarketPulse,
   usePortfolioHistory,
   useStrategySettings,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
 
 // ── Strategy settings (top-N daily entry cap) ─────────────────────────────────
+
+const PULSE_STYLES: Record<string, string> = {
+  STRONG:  "text-emerald-400 bg-emerald-900/40",
+  UPTREND: "text-emerald-300 bg-emerald-900/30",
+  NEUTRAL: "text-amber-400 bg-amber-900/40",
+  WEAK:    "text-orange-400 bg-orange-900/40",
+  AVOID:   "text-red-400 bg-red-900/40",
+};
+
+function MarketPulseRow() {
+  const { data: pulse } = useMarketPulse();
+  if (!pulse) return null;
+
+  const allowedText =
+    pulse.entries_allowed < 0
+      ? "entries uncapped"
+      : `up to ${pulse.entries_allowed} of ${pulse.max_entries_per_day} entries today`;
+
+  return (
+    <div className="flex items-center gap-2 pt-2 border-t border-slate-700/60 flex-wrap">
+      <span className={cn(
+        "text-[11px] font-semibold px-2 py-0.5 rounded-full",
+        PULSE_STYLES[pulse.label] ?? PULSE_STYLES.NEUTRAL,
+      )}>
+        Market pulse {pulse.score}/100 · {pulse.label}
+      </span>
+      <span className="text-xs text-slate-400">→ {allowedText}</span>
+      {pulse.breadth_pct != null && (
+        <span className="text-[11px] text-slate-500 ml-auto">
+          {(pulse.breadth_pct * 100).toFixed(0)}% of stocks above 50DMA
+        </span>
+      )}
+    </div>
+  );
+}
 
 function StrategySettingsCard() {
   const { data: current, mutate } = useStrategySettings();
@@ -87,6 +124,7 @@ function StrategySettingsCard() {
           </button>
         </div>
         {status === "error" && <p className="text-xs text-red-400">{errorMsg}</p>}
+        <MarketPulseRow />
       </div>
     </section>
   );

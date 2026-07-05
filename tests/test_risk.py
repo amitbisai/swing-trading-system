@@ -91,3 +91,66 @@ def test_position_sizing_zero_on_zero_risk():
         stop_loss=Decimal("100"),  # stop == entry — undefined risk
     )
     assert shares == 0
+
+
+# ── Market pulse → entries allowed ────────────────────────────────────────────
+
+def test_entries_allowed_scales_with_pulse():
+    from risk.market_pulse import entries_allowed
+
+    assert entries_allowed(5, 80) == 5   # strong market: full allocation
+    assert entries_allowed(5, 65) == 3   # uptrend: 60%
+    assert entries_allowed(5, 50) == 2   # neutral: 40%
+    assert entries_allowed(5, 35) == 1   # weak: 20%, at least 1
+    assert entries_allowed(5, 20) == 0   # avoid: sit out
+
+
+def test_entries_allowed_unlimited_cap_gates_on_off():
+    from risk.market_pulse import entries_allowed
+
+    assert entries_allowed(0, 80) == 10_000   # uncapped, healthy market
+    assert entries_allowed(0, 20) == 0        # uncapped but weak market → sit out
+
+
+# ── Capital pacing ────────────────────────────────────────────────────────────
+
+def test_per_trade_cash_cap_splits_daily_budget():
+    from datetime import date
+
+    from paper_trading.engine import EntryPlan, per_trade_cash_cap
+
+    plan = EntryPlan(
+        as_of=date.today(),
+        capital=Decimal("100000"),
+        cash=Decimal("100000"),
+        entered_today=0,
+        deployed_today=Decimal("0"),
+        allowed_today=5,
+        pulse_score=80,
+        pulse_label="STRONG",
+    )
+    # daily budget 25% = 25,000 across 5 entries → 5,000 each
+    assert per_trade_cash_cap(plan, opened=0, spent=Decimal("0")) == Decimal("5000")
+    # after 2 entries costing 10k, 3 remain sharing 15k → 5,000 each
+    assert per_trade_cash_cap(plan, opened=2, spent=Decimal("10000")) == Decimal("5000")
+    # all entries used → 0
+    assert per_trade_cash_cap(plan, opened=5, spent=Decimal("25000")) == Decimal("0")
+
+
+def test_per_trade_cash_cap_respects_reserve():
+    from datetime import date
+
+    from paper_trading.engine import EntryPlan, per_trade_cash_cap
+
+    plan = EntryPlan(
+        as_of=date.today(),
+        capital=Decimal("100000"),
+        cash=Decimal("12000"),        # only 12k cash left
+        entered_today=0,
+        deployed_today=Decimal("0"),
+        allowed_today=1,
+        pulse_score=80,
+        pulse_label="STRONG",
+    )
+    # reserve floor 10% = 10,000 → only 2,000 usable despite 25k daily budget
+    assert per_trade_cash_cap(plan, opened=0, spent=Decimal("0")) == Decimal("2000")

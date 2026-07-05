@@ -274,6 +274,17 @@ class T1ScanOut(BaseModel):
         )
 
 
+class MarketPulseOut(BaseModel):
+    score: int                       # 0–100
+    label: str                       # STRONG | UPTREND | NEUTRAL | WEAK | AVOID
+    entries_allowed: int             # today's pulse-scaled entry count
+    max_entries_per_day: int         # the user's configured top-N cap
+    spy_close: float | None = None
+    spy_sma50: float | None = None
+    spy_sma200: float | None = None
+    breadth_pct: float | None = None  # fraction of tracked stocks above their 50DMA
+
+
 class TierPerformance(BaseModel):
     tier: str                   # T1 | T2
     closed_trades: int

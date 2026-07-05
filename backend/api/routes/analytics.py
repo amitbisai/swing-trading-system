@@ -9,6 +9,7 @@ from api.schemas import (
     AnalyticsSummary,
     ApiResponse,
     CapitalStats,
+    MarketPulseOut,
     SuggestionStats,
     TierPerformance,
     TradeStats,
@@ -24,6 +25,36 @@ _ZERO = Decimal("0")
 
 def _ts() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── GET /analytics/market-pulse ───────────────────────────────────────────────
+
+@router.get("/market-pulse", response_model=ApiResponse[MarketPulseOut])
+async def get_market_pulse_endpoint() -> ApiResponse[MarketPulseOut]:
+    """
+    Today's market health score and the resulting entry allowance
+    (the user's top-N cap scaled by market trend + breadth).
+    """
+    from db.app_settings import get_int_setting
+    from risk.market_pulse import entries_allowed, get_market_pulse
+
+    pulse = await get_market_pulse()
+    max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
+    allowed = entries_allowed(max_daily, pulse.score)
+
+    return ApiResponse(
+        data=MarketPulseOut(
+            score=pulse.score,
+            label=pulse.label,
+            entries_allowed=allowed if allowed < 10_000 else -1,
+            max_entries_per_day=max_daily,
+            spy_close=pulse.spy_close,
+            spy_sma50=pulse.spy_sma50,
+            spy_sma200=pulse.spy_sma200,
+            breadth_pct=pulse.breadth_pct,
+        ),
+        timestamp=_ts(),
+    )
 
 
 # ── GET /analytics/summary ────────────────────────────────────────────────────

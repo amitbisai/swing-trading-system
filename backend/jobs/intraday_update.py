@@ -56,9 +56,10 @@ from config import settings  # noqa: E402
 from db.models import PaperTrade, Suggestion  # noqa: E402
 from db.session import async_session_factory  # noqa: E402
 from paper_trading.engine import (  # noqa: E402
-    compute_nav,
     get_portfolio_snapshot,
     open_trade,
+    per_trade_cash_cap,
+    plan_entries,
 )
 from paper_trading.mark_to_market import check_exit, compute_realized_pnl  # noqa: E402
 from risk.position_sizing import compute_position_size  # noqa: E402
@@ -131,26 +132,19 @@ async def _fetch_live_prices(symbols: list[str]) -> dict[str, Decimal]:
 
 async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
     """
-    Open trades for today's active suggestions not already held, top-N by
-    confidence (max_entries_per_day, runtime-set from the Analytics page).
-    Counts trades already entered today, so successive hourly runs never
-    exceed the daily cap.
+    Open trades for today's active suggestions not already held.
+
+    Entry count and sizing are governed by the shared entry plan:
+    market-pulse-scaled top-N, daily deployment budget split across the
+    remaining allowed entries, and a hard cash-reserve floor. Successive
+    hourly runs re-read the plan, so the daily caps are never exceeded.
     """
-    from sqlalchemy import func
-
-    from db.app_settings import get_int_setting
-
     async with async_session_factory() as session:
         open_rows = (await session.execute(
             select(PaperTrade.symbol).where(PaperTrade.is_open == True)
         )).all()
         open_symbols = {r[0] for r in open_rows}
         open_count = len(open_rows)
-
-        entered_today = (await session.execute(
-            select(func.count()).select_from(PaperTrade)
-            .where(PaperTrade.entry_date == today)
-        )).scalar_one()
 
         suggestions: list[Suggestion] = list(
             (await session.execute(
@@ -160,21 +154,23 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
             )).scalars().all()
         )
 
-        nav = await compute_nav(session, today)
-        capital = nav["total_capital"]
-        cash = nav["cash_balance"]
-
-    max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
+        plan = await plan_entries(session, today)
 
     opened = 0
+    spent = Decimal("0")
     for s in suggestions:
         if 0 < settings.max_open_positions <= open_count:
             break
-        if 0 < max_daily <= entered_today + opened:
-            log.info("Auto-entry: daily entry cap reached (%d) — done for today", max_daily)
-            break
         if s.symbol in open_symbols:
             continue
+
+        cash_cap = per_trade_cash_cap(plan, opened, spent)
+        if cash_cap <= 0:
+            log.info(
+                "Auto-entry: entry budget exhausted (pulse %d/100 → %d allowed today) — done",
+                plan.pulse_score, plan.allowed_today,
+            )
+            break
 
         live = prices.get(s.symbol)
         if live is None:
@@ -188,7 +184,7 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
         stop   = live - stop_dist
         target = live + target_dist
 
-        shares = compute_position_size(capital, live, stop, available_cash=cash)
+        shares = compute_position_size(plan.capital, live, stop, available_cash=cash_cap)
         if shares == 0:
             log.debug("Auto-entry: zero shares for %s — skipping", s.symbol)
             continue
@@ -200,7 +196,7 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
             open_symbols.add(s.symbol)
             open_count += 1
             opened += 1
-            cash -= trade.capital_at_risk   # keep later entries within remaining cash
+            spent += trade.capital_at_risk
             log.info(
                 "Auto-entry: %s %s x%d @ $%s (stop=%s target=%s)",
                 s.symbol, s.direction, shares, live, stop, target,
