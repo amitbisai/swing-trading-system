@@ -10,13 +10,15 @@ Two ingredients:
      SMA, straight from our daily_prices table. Breadth confirms whether a
      rally is broad-based or carried by a handful of mega-caps.
 
-Exposure ladder (fraction of the user's top-N daily entry cap):
+Exposure scaling (fraction of the user's top-N daily entry cap):
 
-    score >= 75   →  100%   strong uptrend, full participation
-    60 – 74       →   60%
-    45 – 59       →   40%
-    30 – 44       →   20%   (at least 1 entry)
-    <  30         →    0%   sideways/weak tape — sit out
+    score <  30   →  0% — sideways/weak tape, sit out entirely
+    30 … 85       →  linear ramp from ~0% to 100% (always at least 1 entry)
+    score >= 85   →  100% — strong uptrend, full participation
+
+The ramp is continuous so every entry count between 1 and N is reachable
+(e.g. with N=5: score 72 → 4 entries, score 50 → 2, score 35 → 1), and it
+scales automatically when the user changes N from the Analytics page.
 
 The regime filter (SPY < 200DMA → suggestions inactive) still sits underneath
 this as the hard off-switch; the pulse handles the shades of grey above it.
@@ -84,15 +86,10 @@ def _label(score: int) -> str:
 
 
 def exposure_fraction(score: int) -> float:
-    if score >= 75:
-        return 1.0
-    if score >= 60:
-        return 0.6
-    if score >= 45:
-        return 0.4
-    if score >= 30:
-        return 0.2
-    return 0.0
+    """Linear ramp: 0 below 30, full participation at 85+."""
+    if score < 30:
+        return 0.0
+    return min((score - 30) / 55.0, 1.0)
 
 
 def entries_allowed(max_daily: int, score: int) -> int:
@@ -100,12 +97,11 @@ def entries_allowed(max_daily: int, score: int) -> int:
     Scale the user's top-N cap by market health.
     max_daily <= 0 means "no cap" — then the pulse only gates on/off.
     """
-    frac = exposure_fraction(score)
-    if frac == 0.0:
+    if score < 30:
         return 0
     if max_daily <= 0:
         return 10_000
-    return max(1, math.ceil(max_daily * frac))
+    return max(1, math.ceil(max_daily * exposure_fraction(score)))
 
 
 async def get_market_pulse() -> MarketPulse:

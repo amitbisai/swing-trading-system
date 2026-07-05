@@ -98,11 +98,23 @@ def test_position_sizing_zero_on_zero_risk():
 def test_entries_allowed_scales_with_pulse():
     from risk.market_pulse import entries_allowed
 
-    assert entries_allowed(5, 80) == 5   # strong market: full allocation
-    assert entries_allowed(5, 65) == 3   # uptrend: 60%
-    assert entries_allowed(5, 50) == 2   # neutral: 40%
-    assert entries_allowed(5, 35) == 1   # weak: 20%, at least 1
+    # linear ramp 30→85, so every count between 1 and N is reachable
+    assert entries_allowed(5, 90) == 5   # strong market: full allocation
+    assert entries_allowed(5, 72) == 4
+    assert entries_allowed(5, 60) == 3
+    assert entries_allowed(5, 50) == 2
+    assert entries_allowed(5, 35) == 1   # weak: at least 1
     assert entries_allowed(5, 20) == 0   # avoid: sit out
+
+
+def test_entries_allowed_scales_with_user_cap():
+    from risk.market_pulse import entries_allowed
+
+    # the ramp stretches with the user's top-N setting
+    assert entries_allowed(10, 90) == 10
+    assert entries_allowed(10, 72) == 8
+    assert entries_allowed(10, 50) == 4
+    assert entries_allowed(10, 20) == 0
 
 
 def test_entries_allowed_unlimited_cap_gates_on_off():
