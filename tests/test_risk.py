@@ -166,3 +166,37 @@ def test_per_trade_cash_cap_respects_reserve():
     )
     # reserve floor 10% = 10,000 → only 2,000 usable despite 25k daily budget
     assert per_trade_cash_cap(plan, opened=0, spent=Decimal("0")) == Decimal("2000")
+
+
+def test_per_trade_cash_cap_t2_count_exempt():
+    from datetime import date
+
+    from paper_trading.engine import EntryPlan, per_trade_cash_cap
+
+    plan = EntryPlan(
+        as_of=date.today(),
+        capital=Decimal("100000"),
+        cash=Decimal("100000"),
+        entered_today=5,              # all T1 count slots already used
+        deployed_today=Decimal("0"),
+        allowed_today=5,
+        pulse_score=80,
+        pulse_label="STRONG",
+    )
+    # T1: count slots exhausted → blocked
+    assert per_trade_cash_cap(plan, opened=0, spent=Decimal("0")) == Decimal("0")
+    # T2: count-exempt → still gets a budget share (25k budget / 1 slot, cash-capped)
+    assert per_trade_cash_cap(plan, opened=0, spent=Decimal("0"), count_exempt=True) > 0
+
+    # pulse < 30 (allowed_today == 0) blocks T2 as well — hard sit-out
+    plan_avoid = EntryPlan(
+        as_of=date.today(),
+        capital=Decimal("100000"),
+        cash=Decimal("100000"),
+        entered_today=0,
+        deployed_today=Decimal("0"),
+        allowed_today=0,
+        pulse_score=20,
+        pulse_label="AVOID",
+    )
+    assert per_trade_cash_cap(plan_avoid, opened=0, spent=Decimal("0"), count_exempt=True) == Decimal("0")

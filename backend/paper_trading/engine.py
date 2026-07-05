@@ -381,9 +381,12 @@ async def plan_entries(session, as_of: date) -> EntryPlan:
 
     nav = await compute_nav(session, as_of)
 
+    # Only T1 entries consume top-N count slots — T2 signals are rare,
+    # heavily pre-screened, and enter count-exempt (see per_trade_cash_cap).
     entered_today = (await session.execute(
         select(func.count()).select_from(PaperTrade)
-        .where(PaperTrade.entry_date == as_of)
+        .join(Suggestion, PaperTrade.suggestion_id == Suggestion.id)
+        .where(PaperTrade.entry_date == as_of, Suggestion.tier != "T2")
     )).scalar_one()
 
     deployed_row = (await session.execute(
@@ -413,16 +416,27 @@ async def plan_entries(session, as_of: date) -> EntryPlan:
     )
 
 
-def per_trade_cash_cap(plan: EntryPlan, opened: int, spent: Decimal) -> Decimal:
+def per_trade_cash_cap(
+    plan: EntryPlan, opened: int, spent: Decimal, count_exempt: bool = False
+) -> Decimal:
     """
     Cash available for the NEXT entry, respecting all pacing rules:
       - daily deployment budget (max_daily_deployment_pct of capital),
         split evenly across today's remaining allowed entries
       - cash reserve floor (min_cash_reserve_pct of capital never invested)
     Returns <= 0 when no further entry should be made today.
+
+    count_exempt=True (T2 signals): the entry does not consume a top-N count
+    slot — T2 setups are rare and heavily pre-screened, so whenever one
+    appears it should be taken. It still shares the daily budget and cash
+    reserve, and is still blocked when the pulse says sit out entirely.
     """
     entries_remaining = plan.allowed_today - plan.entered_today - opened
-    if entries_remaining <= 0:
+    if count_exempt:
+        if plan.allowed_today <= 0:       # pulse < 30 — hard sit-out for everyone
+            return Decimal("0")
+        entries_remaining = max(entries_remaining, 0) + 1   # its own budget share
+    elif entries_remaining <= 0:
         return Decimal("0")
 
     daily_budget = (
@@ -466,17 +480,27 @@ async def accept_suggestions(as_of: date) -> int:
 
         plan = await plan_entries(session, as_of)
 
-    opened = 0
+    # T2 first: rare, heavily pre-screened signals always get taken
+    # (count-exempt); T1 signals then fill the pulse-scaled top-N slots.
+    ordered = [s for s in suggestions if s.tier == "T2"] + [
+        s for s in suggestions if s.tier != "T2"
+    ]
+
+    opened_t1 = 0
+    opened_total = 0
     spent = Decimal("0")
-    for s in suggestions:
+    for s in ordered:
+        is_t2 = s.tier == "T2"
         # max_open_positions <= 0 means unlimited
         if 0 < settings.max_open_positions <= open_count:
             break
         if s.symbol in open_symbols:
             continue
 
-        cash_cap = per_trade_cash_cap(plan, opened, spent)
+        cash_cap = per_trade_cash_cap(plan, opened_t1, spent, count_exempt=is_t2)
         if cash_cap <= 0:
+            if is_t2:
+                continue   # budget/pulse blocked this T2; T1 slots may differ
             logger.info(
                 "accept_suggestions: entry budget exhausted (pulse %d/100 → %d allowed) — done",
                 plan.pulse_score, plan.allowed_today,
@@ -494,11 +518,16 @@ async def accept_suggestions(as_of: date) -> int:
         if trade is not None:
             open_symbols.add(s.symbol)
             open_count += 1
-            opened += 1
+            opened_total += 1
+            if not is_t2:
+                opened_t1 += 1
             spent += trade.capital_at_risk
 
-    logger.info("accept_suggestions(%s): opened %d trade(s), deployed $%s", as_of, opened, spent)
-    return opened
+    logger.info(
+        "accept_suggestions(%s): opened %d trade(s) (%d T1 counted, %d T2 exempt), deployed $%s",
+        as_of, opened_total, opened_t1, opened_total - opened_t1, spent,
+    )
+    return opened_total
 
 
 async def process_eod(as_of: date) -> None:

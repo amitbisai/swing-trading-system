@@ -156,16 +156,26 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
 
         plan = await plan_entries(session, today)
 
-    opened = 0
+    # T2 first: rare, heavily pre-screened signals always get taken
+    # (count-exempt); T1 signals then fill the pulse-scaled top-N slots.
+    ordered = [s for s in suggestions if s.tier == "T2"] + [
+        s for s in suggestions if s.tier != "T2"
+    ]
+
+    opened_t1 = 0
+    opened_total = 0
     spent = Decimal("0")
-    for s in suggestions:
+    for s in ordered:
+        is_t2 = s.tier == "T2"
         if 0 < settings.max_open_positions <= open_count:
             break
         if s.symbol in open_symbols:
             continue
 
-        cash_cap = per_trade_cash_cap(plan, opened, spent)
+        cash_cap = per_trade_cash_cap(plan, opened_t1, spent, count_exempt=is_t2)
         if cash_cap <= 0:
+            if is_t2:
+                continue   # budget/pulse blocked this T2; T1 slots may differ
             log.info(
                 "Auto-entry: entry budget exhausted (pulse %d/100 → %d allowed today) — done",
                 plan.pulse_score, plan.allowed_today,
@@ -195,13 +205,16 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
         if trade is not None:
             open_symbols.add(s.symbol)
             open_count += 1
-            opened += 1
+            opened_total += 1
+            if not is_t2:
+                opened_t1 += 1
             spent += trade.capital_at_risk
             log.info(
-                "Auto-entry: %s %s x%d @ $%s (stop=%s target=%s)",
-                s.symbol, s.direction, shares, live, stop, target,
+                "Auto-entry: %s %s (%s) x%d @ $%s (stop=%s target=%s)%s",
+                s.symbol, s.direction, s.tier, shares, live, stop, target,
+                "  [T2 — count-exempt]" if is_t2 else "",
             )
-    return opened
+    return opened_total
 
 
 # ── Auto-exit at live prices ───────────────────────────────────────────────────
