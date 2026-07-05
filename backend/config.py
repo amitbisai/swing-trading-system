@@ -40,7 +40,12 @@ class Settings(BaseSettings):
     t1_target_pct: float = 0.04
     t2_stop_loss_pct: float = 0.04
     t2_target_pct: float = 0.10
-    max_capital_per_trade_pct: float = 0.02
+    # Risk-based position sizing:
+    #   shares sized so a stop-out loses risk_per_trade_pct of capital,
+    #   position value capped at max_position_pct of capital (and at
+    #   available cash so the account never goes negative).
+    risk_per_trade_pct: float = 0.01   # 1% of capital at risk per trade
+    max_position_pct: float = 0.15     # max 15% of capital in one position
     # 0 = unlimited open positions
     max_open_positions: int = 0
 

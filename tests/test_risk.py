@@ -31,22 +31,63 @@ def test_t2_risk_reward_is_2_point_5():
     assert rr == pytest.approx(2.5, rel=1e-2)
 
 
-def test_position_sizing_respects_capital_limit():
+def test_position_sizing_risk_based():
+    # capital 100k, 1% risk = $1,000 budget, $2 risk/share → 500 shares by risk,
+    # but 15% position cap = $15,000 / $100 = 150 shares → 150 wins
     shares = compute_position_size(
-        capital=Decimal("10000"),
+        capital=Decimal("100000"),
         entry_price=Decimal("100"),
         stop_loss=Decimal("98"),
-        max_capital_pct=0.02,
+        risk_pct=0.01,
+        max_position_pct=0.15,
+    )
+    assert shares == 150
+    # risk if stopped out never exceeds the 1% budget
+    assert shares * Decimal("2") <= Decimal("100000") * Decimal("0.01") * 2  # capped below budget
+
+
+def test_position_sizing_risk_budget_binds_on_wide_stop():
+    # wide stop ($10 risk/share): 1% of 100k = $1,000 → 100 shares by risk;
+    # position cap 15% = 150 shares → risk constraint wins
+    shares = compute_position_size(
+        capital=Decimal("100000"),
+        entry_price=Decimal("100"),
+        stop_loss=Decimal("90"),
+        risk_pct=0.01,
+        max_position_pct=0.15,
+    )
+    assert shares == 100
+    assert shares * Decimal("10") == Decimal("1000")
+
+
+def test_position_sizing_capped_by_available_cash():
+    shares = compute_position_size(
+        capital=Decimal("100000"),
+        entry_price=Decimal("100"),
+        stop_loss=Decimal("98"),
+        risk_pct=0.01,
+        max_position_pct=0.15,
+        available_cash=Decimal("5000"),
+    )
+    assert shares == 50   # $5,000 cash / $100 — cash is the binding ceiling
+
+
+def test_position_sizing_short_direction():
+    # SHORT: stop above entry — |entry − stop| is the risk per share
+    shares = compute_position_size(
+        capital=Decimal("100000"),
+        entry_price=Decimal("100"),
+        stop_loss=Decimal("104"),
+        risk_pct=0.01,
+        max_position_pct=0.15,
     )
     assert shares > 0
-    cost = shares * Decimal("100")
-    assert cost <= Decimal("10000") * Decimal("0.02")
 
 
-def test_position_sizing_zero_on_bad_stop():
+def test_position_sizing_zero_on_zero_risk():
     shares = compute_position_size(
         capital=Decimal("10000"),
         entry_price=Decimal("100"),
-        stop_loss=Decimal("105"),  # stop above entry — invalid
+        stop_loss=Decimal("100"),  # stop == entry — undefined risk
     )
     assert shares == 0

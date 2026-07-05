@@ -389,7 +389,9 @@ async def accept_suggestions(as_of: date) -> int:
             )).scalars().all()
         )
 
-        capital = await _current_capital(session)
+        nav = await compute_nav(session, as_of)
+        capital = nav["total_capital"]
+        cash = nav["cash_balance"]
 
     max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
 
@@ -408,7 +410,9 @@ async def accept_suggestions(as_of: date) -> int:
         if s.symbol in open_symbols:
             continue
 
-        shares = compute_position_size(capital, s.entry_price, s.stop_loss)
+        shares = compute_position_size(
+            capital, s.entry_price, s.stop_loss, available_cash=cash
+        )
         if shares == 0:
             logger.debug("accept_suggestions: zero shares computed for %s — skipping", s.symbol)
             continue
@@ -418,6 +422,7 @@ async def accept_suggestions(as_of: date) -> int:
             open_symbols.add(s.symbol)
             open_count += 1
             opened += 1
+            cash -= trade.capital_at_risk   # keep later entries within remaining cash
 
     logger.info("accept_suggestions(%s): opened %d trade(s)", as_of, opened)
     return opened

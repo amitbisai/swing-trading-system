@@ -56,7 +56,7 @@ from config import settings  # noqa: E402
 from db.models import PaperTrade, Suggestion  # noqa: E402
 from db.session import async_session_factory  # noqa: E402
 from paper_trading.engine import (  # noqa: E402
-    _current_capital,
+    compute_nav,
     get_portfolio_snapshot,
     open_trade,
 )
@@ -160,7 +160,9 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
             )).scalars().all()
         )
 
-        capital = await _current_capital(session)
+        nav = await compute_nav(session, today)
+        capital = nav["total_capital"]
+        cash = nav["cash_balance"]
 
     max_daily = await get_int_setting("max_entries_per_day", settings.max_entries_per_day)
 
@@ -186,7 +188,7 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
         stop   = live - stop_dist
         target = live + target_dist
 
-        shares = compute_position_size(capital, live, stop)
+        shares = compute_position_size(capital, live, stop, available_cash=cash)
         if shares == 0:
             log.debug("Auto-entry: zero shares for %s — skipping", s.symbol)
             continue
@@ -198,6 +200,7 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
             open_symbols.add(s.symbol)
             open_count += 1
             opened += 1
+            cash -= trade.capital_at_risk   # keep later entries within remaining cash
             log.info(
                 "Auto-entry: %s %s x%d @ $%s (stop=%s target=%s)",
                 s.symbol, s.direction, shares, live, stop, target,

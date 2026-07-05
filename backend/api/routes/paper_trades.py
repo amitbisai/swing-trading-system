@@ -112,18 +112,15 @@ async def create_paper_trade(
         stop_price   = suggestion.stop_loss
         target_price = suggestion.target_price
 
-    # ── Auto-size if shares not provided ──────────────────────────────────────
+    # ── Auto-size if shares not provided (risk-based, capped by cash) ─────────
     auto_sized = body.shares is None
     if auto_sized:
-        from config import settings
-        from db.models import PortfolioSnapshot
-        snap = (await db.execute(
-            select(PortfolioSnapshot)
-            .order_by(PortfolioSnapshot.snapshot_date.desc())
-            .limit(1)
-        )).scalar_one_or_none()
-        capital = snap.total_capital if snap else settings.initial_capital
-        shares = compute_position_size(capital, entry_price, stop_price)
+        from paper_trading.engine import compute_nav
+        nav = await compute_nav(db, date.today())
+        shares = compute_position_size(
+            nav["total_capital"], entry_price, stop_price,
+            available_cash=nav["cash_balance"],
+        )
         if shares == 0:
             raise HTTPException(
                 status_code=422,
