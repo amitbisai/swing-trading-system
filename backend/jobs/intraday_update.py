@@ -62,6 +62,7 @@ from paper_trading.engine import (  # noqa: E402
     plan_entries,
 )
 from paper_trading.mark_to_market import check_exit, compute_realized_pnl  # noqa: E402
+from risk.entry_guards import is_gap_chase  # noqa: E402
 from risk.position_sizing import compute_position_size  # noqa: E402
 
 logging.basicConfig(
@@ -193,6 +194,19 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
         live = prices.get(s.symbol)
         if live is None:
             log.warning("Auto-entry: no live price for %s — skipping this hour", s.symbol)
+            continue
+
+        # Gap-chase guard: if price already ran past the signal entry by more
+        # than max_entry_gap_pct, the scored setup is gone — don't chase.
+        # Re-checked each hourly run, so a pullback later today can still fill.
+        if is_gap_chase(s.direction, s.entry_price, live, settings.max_entry_gap_pct):
+            gap_pct = (live - s.entry_price) / s.entry_price * 100
+            log.info(
+                "Auto-entry: gap-chase guard skipped %s (%s) — live $%s is %+.2f%% vs "
+                "signal entry $%s (limit %.1f%%)",
+                s.symbol, s.direction, live, gap_pct, s.entry_price,
+                settings.max_entry_gap_pct * 100,
+            )
             continue
 
         # Preserve the suggestion's ATR-derived stop/target distances,

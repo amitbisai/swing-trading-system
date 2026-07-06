@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     # the screener has an unusually noisy day. 0 = unlimited.
     max_t2_entries_per_day: int = 5
 
+    # T1 earnings gate: drop T1 signals whose next earnings report is within
+    # this many calendar days (overnight gap risk swamps any TA edge — the
+    # T2 screener has had this gate since v2; this applies it to T1 too).
+    # 0 disables.
+    t1_min_earnings_days: int = 8
+
+    # Gap-chase guard: skip an auto-entry when the live price has run more
+    # than this fraction beyond the signal's entry price (the scored setup
+    # no longer exists at that price). 0 disables.
+    max_entry_gap_pct: float = 0.015
+
     # ATR-based stops/targets (primary sizing when ATR is available)
     atr_stop_mult: float = 1.5     # stop  = entry ∓ 1.5 × ATR(14)
     atr_target_mult: float = 3.0   # target = entry ± 3.0 × ATR(14)  (2:1 reward:risk)

@@ -224,6 +224,33 @@ async def run_synthesizer(
     # at equal confidence appear in the shuffled (random) order they were appended.
     # This ensures different stocks surface each day rather than always A–F.
     candidates.sort(key=lambda s: s.confidence_score, reverse=True)
+
+    # ── T1 earnings gate ──────────────────────────────────────────────────────
+    # Drop T1 candidates reporting earnings within t1_min_earnings_days — an
+    # overnight earnings gap can blow through any stop; TA edge is irrelevant.
+    # (T2 candidates were already gated inside the screener.) Applied before
+    # the cap so a dropped name's slot backfills with the next candidate.
+    if settings.t1_min_earnings_days > 0 and candidates:
+        from agents.models import TradeTier
+        from risk.entry_guards import get_days_to_earnings
+
+        to_check = [
+            c.symbol for c in candidates[: _MAX_SUGGESTIONS + 10]
+            if c.tier == TradeTier.T1
+        ]
+        days_map = await get_days_to_earnings(to_check)
+        blocked = {
+            sym for sym, days in days_map.items()
+            if days is not None and 0 <= days < settings.t1_min_earnings_days
+        }
+        if blocked:
+            logger.info(
+                "Synthesizer: earnings gate dropped %d T1 candidate(s) "
+                "(earnings < %d days): %s",
+                len(blocked), settings.t1_min_earnings_days, ", ".join(sorted(blocked)),
+            )
+        candidates = [c for c in candidates if c.symbol not in blocked]
+
     suggestions = candidates[:_MAX_SUGGESTIONS]
 
     if len(candidates) > _MAX_SUGGESTIONS:

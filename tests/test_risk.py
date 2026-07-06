@@ -200,3 +200,34 @@ def test_per_trade_cash_cap_t2_count_exempt():
         pulse_label="AVOID",
     )
     assert per_trade_cash_cap(plan_avoid, opened=0, spent=Decimal("0"), count_exempt=True) == Decimal("0")
+
+
+# ── Entry guards ──────────────────────────────────────────────────────────────
+
+def test_gap_chase_guard_long():
+    from risk.entry_guards import is_gap_chase
+
+    entry = Decimal("100")
+    # within 1.5% — allowed
+    assert not is_gap_chase("LONG", entry, Decimal("101.40"), 0.015)
+    # gapped up beyond 1.5% — blocked
+    assert is_gap_chase("LONG", entry, Decimal("101.60"), 0.015)
+    # adverse gap (down) is NOT blocked here — stop geometry still valid
+    assert not is_gap_chase("LONG", entry, Decimal("97.00"), 0.015)
+
+
+def test_gap_chase_guard_short():
+    from risk.entry_guards import is_gap_chase
+
+    entry = Decimal("100")
+    # for shorts, the favourable run is DOWN
+    assert is_gap_chase("SHORT", entry, Decimal("98.00"), 0.015)
+    assert not is_gap_chase("SHORT", entry, Decimal("99.00"), 0.015)
+    # adverse gap up is not blocked
+    assert not is_gap_chase("SHORT", entry, Decimal("103.00"), 0.015)
+
+
+def test_gap_chase_guard_disabled():
+    from risk.entry_guards import is_gap_chase
+
+    assert not is_gap_chase("LONG", Decimal("100"), Decimal("150"), 0.0)
