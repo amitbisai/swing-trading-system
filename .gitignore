@@ -61,3 +61,7 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Backtest artifacts
+backtest_results/
+backend/backtest/.cache/

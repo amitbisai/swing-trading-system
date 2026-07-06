@@ -17,6 +17,10 @@ ingest:
 agents:
 	cd backend && python -m agents.orchestrator
 
+# ── Backtest (T1 strategy, 2 years, top-5 by default) ────────────────────────
+backtest:
+	cd backend && python -m backtest.run_backtest
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
 	pytest tests/ -v
