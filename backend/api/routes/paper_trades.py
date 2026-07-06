@@ -184,4 +184,11 @@ async def close_paper_trade(
     await db.commit()
     await db.refresh(trade)
 
+    # Record the outcome row for analytics (best-effort; nightly sync catches misses)
+    try:
+        from paper_trading.outcomes import sync_trade_outcomes
+        await sync_trade_outcomes()
+    except Exception:
+        pass
+
     return ApiResponse(data=_to_out(trade), timestamp=_ts())

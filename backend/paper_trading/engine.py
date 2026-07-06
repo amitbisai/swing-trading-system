@@ -405,6 +405,11 @@ async def plan_entries(session, as_of: date) -> EntryPlan:
     pulse = await get_market_pulse()
     allowed = entries_allowed(max_daily, pulse.score)
 
+    # Persist today's pulse so trade outcomes can be analyzed against the
+    # market context that existed at entry (outcome analytics feedback loop).
+    from paper_trading.outcomes import log_market_pulse
+    await log_market_pulse(as_of, pulse)
+
     logger.info(
         "Entry plan(%s): pulse=%d/100 (%s) → %d of %d entries allowed  "
         "(entered=%d, deployed=$%s)",
@@ -556,11 +561,16 @@ async def process_eod(as_of: date) -> None:
     trade manager then reassesses the survivors (trail stops, extend targets
     on strong trends); finally the portfolio snapshot is written.
     """
+    from paper_trading.outcomes import sync_trade_outcomes
     from paper_trading.trade_manager import manage_open_trades
 
     await update_open_trades(as_of)
     await manage_open_trades(as_of)
     await get_portfolio_snapshot(as_of)
+    try:
+        await sync_trade_outcomes()
+    except Exception as exc:
+        logger.warning("sync_trade_outcomes failed (non-fatal): %s", exc)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

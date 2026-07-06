@@ -272,6 +272,85 @@ class T1Scan(Base):
     )
 
 
+class MarketPulseLog(Base):
+    """
+    One row per day — the market pulse computed at entry-planning time.
+    Persisted so trade outcomes can be analyzed against the market context
+    that existed at entry (not reconstructible after the fact).
+    """
+    __tablename__ = "market_pulse_log"
+    __table_args__ = (UniqueConstraint("pulse_date", name="uq_market_pulse_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pulse_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)          # 0–100
+    label: Mapped[str] = mapped_column(String(10), nullable=False)
+    breadth_pct: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    spy_close: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    spy_sma50: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    spy_sma200: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TradeOutcome(Base):
+    """
+    Outcome analytics — one row per CLOSED trade, joining the signal-time
+    variables (what the system believed) with the realized result (what
+    actually happened). The raw material for tuning: win rate / avg R by
+    sentiment bucket, TA bucket, tier, pulse regime, exit reason, etc.
+    """
+    __tablename__ = "trade_outcomes"
+    __table_args__ = (
+        UniqueConstraint("trade_id", name="uq_trade_outcomes_trade"),
+        Index("ix_trade_outcomes_tier", "tier"),
+        Index("ix_trade_outcomes_exit_reason", "exit_reason"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("paper_trades.id", ondelete="CASCADE"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    tier: Mapped[str] = mapped_column(String(2), nullable=False)
+    direction: Mapped[str] = mapped_column(String(5), nullable=False)
+
+    # ── Outcome ───────────────────────────────────────────────────────────────
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    exit_date: Mapped[date] = mapped_column(Date, nullable=False)
+    holding_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    entry_price: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    exit_price: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    shares: Mapped[int] = mapped_column(Integer, nullable=False)
+    realized_pnl: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    return_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)   # pnl / cost × 100
+    r_multiple: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)   # pnl / initial risk
+    levels_adjusted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # ── Signal-time variables (from the suggestion) ───────────────────────────
+    confidence_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ta_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sentiment_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pattern_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # ── T2 screener variables (null for T1 trades) ────────────────────────────
+    t2_score: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
+    t2_rvol: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    t2_signal_tier: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    news_verdict: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # ── Market context at entry ───────────────────────────────────────────────
+    pulse_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pulse_label: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    breadth_pct: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
     __table_args__ = (UniqueConstraint("snapshot_date", name="uq_portfolio_snapshot_date"),)

@@ -57,6 +57,61 @@ async def get_market_pulse_endpoint() -> ApiResponse[MarketPulseOut]:
     )
 
 
+# ── GET /analytics/outcomes ───────────────────────────────────────────────────
+
+@router.get("/outcomes")
+async def get_outcome_analytics(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Variable-impact view over trade_outcomes: win rate, avg R-multiple and
+    trade count per bucket of each signal-time variable. The raw table is
+    trade_outcomes in Supabase — query it directly for deeper analysis.
+    """
+    from db.models import TradeOutcome
+
+    rows = (await db.execute(select(TradeOutcome))).scalars().all()
+
+    def bucketize(value: float | None, edges: list[int]) -> str:
+        if value is None:
+            return "unknown"
+        for e in edges:
+            if value < e:
+                return f"<{e}"
+        return f">={edges[-1]}"
+
+    def agg(group_fn) -> dict:
+        groups: dict[str, list] = {}
+        for r in rows:
+            groups.setdefault(str(group_fn(r)), []).append(r)
+        out = {}
+        for key, items in sorted(groups.items()):
+            withs = [i for i in items if i.r_multiple is not None]
+            wins = [i for i in withs if float(i.r_multiple) > 0]
+            out[key] = {
+                "trades": len(items),
+                "win_rate_pct": round(len(wins) / len(withs) * 100, 1) if withs else None,
+                "avg_r": round(sum(float(i.r_multiple) for i in withs) / len(withs), 3)
+                if withs else None,
+                "total_pnl": round(sum(float(i.realized_pnl or 0) for i in items), 2),
+            }
+        return out
+
+    edges = [40, 55, 70, 85]
+    data = {
+        "total_outcomes": len(rows),
+        "by_tier":            agg(lambda r: r.tier),
+        "by_direction":       agg(lambda r: r.direction),
+        "by_exit_reason":     agg(lambda r: r.exit_reason or "unknown"),
+        "by_confidence":      agg(lambda r: bucketize(r.confidence_score, edges)),
+        "by_ta_score":        agg(lambda r: bucketize(r.ta_score, edges)),
+        "by_sentiment_score": agg(lambda r: bucketize(r.sentiment_score, edges)),
+        "by_pattern_score":   agg(lambda r: bucketize(r.pattern_score, edges)),
+        "by_pulse":           agg(lambda r: bucketize(r.pulse_score, [45, 60, 75])),
+        "by_news_verdict":    agg(lambda r: r.news_verdict or "n/a"),
+        "by_levels_adjusted": agg(lambda r: "adjusted" if r.levels_adjusted else "untouched"),
+    }
+    return {"data": data, "error": None, "timestamp": _ts()}
+
+
 # ── GET /analytics/summary ────────────────────────────────────────────────────
 
 @router.get("/summary", response_model=ApiResponse[AnalyticsSummary])

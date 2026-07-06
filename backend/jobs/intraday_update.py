@@ -385,6 +385,12 @@ async def main(force: bool = False) -> None:
 
     # ── 2. Auto-exit ──────────────────────────────────────────────────────────
     closed = await _auto_exit(today, prices)
+    if closed:
+        try:
+            from paper_trading.outcomes import sync_trade_outcomes
+            await sync_trade_outcomes()
+        except Exception as exc:
+            log.warning("sync_trade_outcomes failed (non-fatal): %s", exc)
 
     # ── 3. Mark-to-market at live prices + snapshot ───────────────────────────
     try:
