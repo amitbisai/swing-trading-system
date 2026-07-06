@@ -357,6 +357,7 @@ def run_simulation(
     top_n: int,
     min_confidence: int,
     exit_mode: str,
+    long_only: bool = False,
 ) -> BacktestResult:
     initial = float(settings.initial_capital)
     cash = initial
@@ -518,6 +519,8 @@ def run_simulation(
                     continue
                 cl, cs = int(row["conf_long"]), int(row["conf_short"])
                 direction, conf = ("LONG", cl) if cl >= cs else ("SHORT", cs)
+                if long_only and direction == "SHORT":
+                    continue
                 if conf < min_confidence:
                     continue
                 c = float(row["close"])
@@ -660,6 +663,8 @@ def main() -> None:
     ap.add_argument("--exit-mode", choices=["intrabar", "close"], default="intrabar",
                     help="intrabar = stops checked vs daily low/high (realistic); "
                          "close = EOD close only (matches the live engine exactly)")
+    ap.add_argument("--long-only", action="store_true",
+                    help="Skip SHORT signals entirely")
     ap.add_argument("--no-cache", action="store_true")
     args = ap.parse_args()
 
@@ -681,6 +686,7 @@ def main() -> None:
     result = run_simulation(
         ind, spy, args.start, args.end,
         top_n=args.top_n, min_confidence=args.min_confidence, exit_mode=args.exit_mode,
+        long_only=args.long_only,
     )
     report(result, spy, args.start, args.end, args.top_n, args.min_confidence, args.exit_mode)
 

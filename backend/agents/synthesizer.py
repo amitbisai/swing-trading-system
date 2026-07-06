@@ -188,6 +188,11 @@ async def run_synthesizer(
             bundle, ta, sent, pat
         )
 
+        # Long-only mode (backtest-validated): shorts added no edge and
+        # crowded out winning longs from the daily entry slots.
+        if settings.long_only and direction == Direction.SHORT:
+            continue
+
         if confidence < _MIN_CONFIDENCE:
             logger.debug(
                 "Synthesizer: %s %s dropped (confidence %d < %d)",

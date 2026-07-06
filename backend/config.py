@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # no longer exists at that price). 0 disables.
     max_entry_gap_pct: float = 0.015
 
+    # Long-only mode: skip SHORT signals entirely. Backtest evidence
+    # (2024-07 → 2026-07, 501 stocks): shorts netted ~$0 directly but consumed
+    # entry slots/budget; removing them took the strategy from +18.0% to
+    # +32.5% with a smaller drawdown. Set false to re-enable shorts.
+    long_only: bool = True
+
     # ATR-based stops/targets (primary sizing when ATR is available)
     atr_stop_mult: float = 1.5     # stop  = entry ∓ 1.5 × ATR(14)
     atr_target_mult: float = 3.0   # target = entry ± 3.0 × ATR(14)  (2:1 reward:risk)
