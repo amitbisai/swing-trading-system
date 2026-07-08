@@ -30,7 +30,7 @@ import asyncio
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, time as dtime, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -147,10 +147,18 @@ async def _auto_enter(today: date, prices: dict[str, Decimal]) -> int:
         open_symbols = {r[0] for r in open_rows}
         open_count = len(open_rows)
 
+        # Active suggestions were generated LAST NIGHT (or Friday night when
+        # today is Monday), so their as_of_date is before today — filter on
+        # is_active + a recency window, NOT on as_of_date == today.
+        # The nightly run deactivates superseded suggestions, so is_active
+        # always points at the latest batch.
         suggestions: list[Suggestion] = list(
             (await session.execute(
                 select(Suggestion)
-                .where(Suggestion.as_of_date == today, Suggestion.is_active == True)
+                .where(
+                    Suggestion.is_active == True,
+                    Suggestion.as_of_date >= today - timedelta(days=4),
+                )
                 .order_by(Suggestion.confidence_score.desc())
             )).scalars().all()
         )
@@ -361,7 +369,8 @@ async def main(force: bool = False) -> None:
         sugg_syms = {
             r[0] for r in (await session.execute(
                 select(Suggestion.symbol).where(
-                    Suggestion.as_of_date == today, Suggestion.is_active == True
+                    Suggestion.is_active == True,
+                    Suggestion.as_of_date >= today - timedelta(days=4),
                 )
             )).all()
         }
