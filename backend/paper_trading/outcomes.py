@@ -27,12 +27,19 @@ Analysis is then a plain SQL/pandas job over trade_outcomes, e.g.:
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select, text
 
-from db.models import MarketPulseLog, PaperTrade, Suggestion, T2Scan, TradeOutcome
+from db.models import (
+    DailyPrice,
+    MarketPulseLog,
+    PaperTrade,
+    Suggestion,
+    T2Scan,
+    TradeOutcome,
+)
 from db.session import async_session_factory
 
 logger = logging.getLogger(__name__)
@@ -80,9 +87,23 @@ _ENSURE_SQL = [
             pulse_score      integer,
             pulse_label      varchar(10),
             breadth_pct      numeric(6,4),
+            mfe_pct          numeric(8,4),
+            mae_pct          numeric(8,4),
+            mfe_r            numeric(8,4),
+            mae_r            numeric(8,4),
+            exit_efficiency  numeric(6,4),
+            post_exit_5d_pct  numeric(8,4),
+            post_exit_10d_pct numeric(8,4),
             created_at       timestamptz NOT NULL DEFAULT now()
         )
     """),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS mfe_pct numeric(8,4)"),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS mae_pct numeric(8,4)"),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS mfe_r numeric(8,4)"),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS mae_r numeric(8,4)"),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS exit_efficiency numeric(6,4)"),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS post_exit_5d_pct numeric(8,4)"),
+    text("ALTER TABLE trade_outcomes ADD COLUMN IF NOT EXISTS post_exit_10d_pct numeric(8,4)"),
     text("CREATE INDEX IF NOT EXISTS ix_trade_outcomes_tier ON trade_outcomes(tier)"),
     text("CREATE INDEX IF NOT EXISTS ix_trade_outcomes_exit_reason ON trade_outcomes(exit_reason)"),
 ]
@@ -187,6 +208,41 @@ async def _build_outcome(session, trade: PaperTrade, sugg: Suggestion) -> TradeO
         select(MarketPulseLog).where(MarketPulseLog.pulse_date == trade.entry_date)
     )).scalar_one_or_none()
 
+    # ── MFE / MAE from daily_prices highs/lows during the hold ────────────────
+    mfe_pct = mae_pct = mfe_r = mae_r = exit_efficiency = None
+    entry = Decimal(str(trade.entry_price))
+    is_long = trade.direction == "LONG"
+    bars = (await session.execute(
+        select(DailyPrice.high, DailyPrice.low)
+        .where(
+            DailyPrice.symbol == trade.symbol,
+            DailyPrice.price_date >= trade.entry_date,
+            DailyPrice.price_date <= exit_d,
+        )
+    )).all()
+    if bars and entry > 0:
+        highs = [Decimal(str(b[0])) for b in bars]
+        lows = [Decimal(str(b[1])) for b in bars]
+        if is_long:
+            fav = max(highs) - entry          # best move in our favour
+            adv = min(lows) - entry           # worst move against (<= 0)
+        else:
+            fav = entry - min(lows)
+            adv = entry - max(highs)
+        mfe_pct = round(float(fav / entry * 100), 4)
+        mae_pct = round(float(adv / entry * 100), 4)
+        if risk_ps > 0:
+            mfe_r = round(float(fav / risk_ps), 4)
+            mae_r = round(float(adv / risk_ps), 4)
+        # captured gain vs max available gain (per share)
+        if trade.exit_price is not None and fav > 0:
+            captured = (
+                Decimal(str(trade.exit_price)) - entry
+                if is_long
+                else entry - Decimal(str(trade.exit_price))
+            )
+            exit_efficiency = round(float(captured / fav), 4)
+
     return TradeOutcome(
         trade_id=trade.id,
         symbol=trade.symbol,
@@ -214,4 +270,67 @@ async def _build_outcome(session, trade: PaperTrade, sugg: Suggestion) -> TradeO
         pulse_score=pulse.score if pulse else None,
         pulse_label=pulse.label if pulse else None,
         breadth_pct=float(pulse.breadth_pct) if pulse and pulse.breadth_pct is not None else None,
+        mfe_pct=mfe_pct,
+        mae_pct=mae_pct,
+        mfe_r=mfe_r,
+        mae_r=mae_r,
+        exit_efficiency=exit_efficiency,
     )
+
+
+# ── Post-exit follow-through (deferred backfill) ──────────────────────────────
+
+async def update_post_exit_returns() -> int:
+    """
+    Fill post_exit_5d_pct / post_exit_10d_pct on outcomes once enough time has
+    passed: the stock's move AFTER our exit. This is the direct evidence for
+    'would a longer holding period have earned more?' —
+      * stopped-out trades that recover strongly → stops too tight
+      * time-exited trades that keep running     → holding period too short
+    Uses the first daily close on/after exit_date + N calendar days.
+    """
+    updated = 0
+    async with async_session_factory() as session:
+        rows = (await session.execute(
+            select(TradeOutcome).where(
+                (TradeOutcome.post_exit_10d_pct == None)
+                | (TradeOutcome.post_exit_5d_pct == None)
+            )
+        )).scalars().all()
+
+        for oc in rows:
+            if oc.exit_price is None:
+                continue
+            exit_px = Decimal(str(oc.exit_price))
+            if exit_px <= 0:
+                continue
+            sign = 1 if oc.direction == "LONG" else -1
+            changed = False
+
+            for days, attr in ((5, "post_exit_5d_pct"), (10, "post_exit_10d_pct")):
+                if getattr(oc, attr) is not None:
+                    continue
+                target_date = oc.exit_date + timedelta(days=days)
+                close = (await session.execute(
+                    select(DailyPrice.close)
+                    .where(
+                        DailyPrice.symbol == oc.symbol,
+                        DailyPrice.price_date >= target_date,
+                    )
+                    .order_by(DailyPrice.price_date.asc())
+                    .limit(1)
+                )).scalar_one_or_none()
+                if close is None:
+                    continue   # not enough time has passed yet
+                pct = float((Decimal(str(close)) - exit_px) / exit_px * 100) * sign
+                setattr(oc, attr, round(pct, 4))
+                changed = True
+
+            if changed:
+                updated += 1
+
+        await session.commit()
+
+    if updated:
+        logger.info("update_post_exit_returns: %d outcome row(s) updated", updated)
+    return updated

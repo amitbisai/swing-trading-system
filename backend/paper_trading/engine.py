@@ -561,7 +561,7 @@ async def process_eod(as_of: date) -> None:
     trade manager then reassesses the survivors (trail stops, extend targets
     on strong trends); finally the portfolio snapshot is written.
     """
-    from paper_trading.outcomes import sync_trade_outcomes
+    from paper_trading.outcomes import sync_trade_outcomes, update_post_exit_returns
     from paper_trading.trade_manager import manage_open_trades
 
     await update_open_trades(as_of)
@@ -569,8 +569,9 @@ async def process_eod(as_of: date) -> None:
     await get_portfolio_snapshot(as_of)
     try:
         await sync_trade_outcomes()
+        await update_post_exit_returns()
     except Exception as exc:
-        logger.warning("sync_trade_outcomes failed (non-fatal): %s", exc)
+        logger.warning("outcome analytics update failed (non-fatal): %s", exc)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

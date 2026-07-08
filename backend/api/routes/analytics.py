@@ -78,6 +78,10 @@ async def get_outcome_analytics(db: AsyncSession = Depends(get_db)) -> dict:
                 return f"<{e}"
         return f">={edges[-1]}"
 
+    def _avg(items: list, attr: str) -> float | None:
+        vals = [float(getattr(i, attr)) for i in items if getattr(i, attr) is not None]
+        return round(sum(vals) / len(vals), 3) if vals else None
+
     def agg(group_fn) -> dict:
         groups: dict[str, list] = {}
         for r in rows:
@@ -92,6 +96,11 @@ async def get_outcome_analytics(db: AsyncSession = Depends(get_db)) -> dict:
                 "avg_r": round(sum(float(i.r_multiple) for i in withs) / len(withs), 3)
                 if withs else None,
                 "total_pnl": round(sum(float(i.realized_pnl or 0) for i in items), 2),
+                # exit-tuning metrics (MFE/MAE analysis)
+                "avg_mfe_r": _avg(items, "mfe_r"),          # best excursion reached, in R
+                "avg_mae_r": _avg(items, "mae_r"),          # worst excursion suffered, in R
+                "avg_exit_efficiency": _avg(items, "exit_efficiency"),  # captured / available
+                "avg_post_exit_10d_pct": _avg(items, "post_exit_10d_pct"),  # move AFTER exit
             }
         return out
 

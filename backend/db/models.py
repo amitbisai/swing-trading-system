@@ -346,6 +346,18 @@ class TradeOutcome(Base):
     pulse_label: Mapped[str | None] = mapped_column(String(10), nullable=True)
     breadth_pct: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
 
+    # ── Trade trajectory (exit-tuning analytics) ──────────────────────────────
+    # MFE/MAE: best/worst price excursion DURING the hold, vs entry.
+    mfe_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    mae_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    mfe_r: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    mae_r: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    # realized gain ÷ max available gain (1.0 = perfect exit; <0 = lost despite MFE)
+    exit_efficiency: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    # what the stock did AFTER we exited — backfilled by the nightly job
+    post_exit_5d_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    post_exit_10d_pct: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
