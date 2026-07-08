@@ -92,6 +92,18 @@ async def run_scanner() -> tuple[list[ScannerOutput], list[AgentInputBundle]]:
         if df is None or df.empty:
             logger.debug("Scanner: no OHLCV for T1 %s — skipping", symbol)
             continue
+        # Freshness gate: skip symbols whose latest bar is stale (halted /
+        # delisted) — signals from frozen data can never be entered anyway.
+        try:
+            import pandas as pd
+            last_bar = pd.Timestamp(df.index[-1]).date()
+            if (today - last_bar).days > 4:
+                logger.info(
+                    "Scanner: T1 %s stale data (last bar %s) — skipped", symbol, last_bar
+                )
+                continue
+        except Exception:
+            pass
         try:
             latest    = df.iloc[-1]
             price     = float(latest["Close"])

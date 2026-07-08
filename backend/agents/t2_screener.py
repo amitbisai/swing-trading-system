@@ -225,6 +225,21 @@ class T2Screener:
         if len(df) < 20:
             return None
 
+        # Data-freshness gate: reject symbols whose latest bar is stale
+        # (halted / delisted / corporate action — Yahoo stops updating).
+        # A signal computed on week-old data is meaningless and can never be
+        # entered anyway (no live price at execution time). SEM lesson.
+        try:
+            last_bar = pd.Timestamp(df.index[-1]).date()
+            if (date.today() - last_bar).days > 4:
+                logger.info(
+                    "%s: stale data (last bar %s) — likely halted/delisted, skipped",
+                    symbol, last_bar,
+                )
+                return None
+        except Exception:
+            pass
+
         latest      = df.iloc[-1]
         price       = float(latest["Close"])
         today_vol   = float(latest["Volume"])
