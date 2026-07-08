@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import ApiResponse
-from db.models import DailyPrice, T2Scan
+from db.models import DailyPnL, DailyPrice, PaperTrade, T2Scan
 from db.session import get_db
 
 router = APIRouter()
@@ -56,6 +56,39 @@ async def get_latest_prices(
     )
 
     prices: dict[str, float] = {row[0]: float(row[1]) for row in rows}
+    price_dates: dict[str, object] = {}
+    date_rows = await db.execute(
+        select(subq.c.symbol, subq.c.max_date)
+    )
+    for sym, d in date_rows:
+        price_dates[sym] = d
+
+    # Overlay with the hourly mark-to-market prices: during market hours the
+    # intraday job upserts near-live prices into daily_pnl for open trades —
+    # fresher than the nightly EOD close in daily_prices.
+    pnl_subq = (
+        select(
+            PaperTrade.symbol,
+            func.max(DailyPnL.pnl_date).label("max_date"),
+        )
+        .join(DailyPnL, DailyPnL.trade_id == PaperTrade.id)
+        .where(PaperTrade.symbol.in_(symbol_list))
+        .group_by(PaperTrade.symbol)
+        .subquery()
+    )
+    pnl_rows = await db.execute(
+        select(PaperTrade.symbol, DailyPnL.close_price, DailyPnL.pnl_date)
+        .join(DailyPnL, DailyPnL.trade_id == PaperTrade.id)
+        .join(
+            pnl_subq,
+            (PaperTrade.symbol == pnl_subq.c.symbol)
+            & (DailyPnL.pnl_date == pnl_subq.c.max_date),
+        )
+    )
+    for sym, close_price, pnl_date in pnl_rows:
+        # use the intraday mark when it is at least as recent as the EOD row
+        if sym not in price_dates or pnl_date >= price_dates[sym]:
+            prices[sym] = float(close_price)
 
     # For any symbols still missing from daily_prices (e.g. newly discovered T2
     # stocks whose first ingest hasn't run yet), fall back to the most recent
