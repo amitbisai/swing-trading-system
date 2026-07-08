@@ -172,6 +172,128 @@ export function useMarketPulse() {
   );
 }
 
+// ── Outcome analytics ─────────────────────────────────────────────────────────
+
+export interface OutcomeBucket {
+  trades: number;
+  win_rate_pct: number | null;
+  avg_r: number | null;
+  total_pnl: number;
+  avg_mfe_r: number | null;
+  avg_mae_r: number | null;
+  avg_exit_efficiency: number | null;
+  avg_post_exit_10d_pct: number | null;
+}
+
+export interface OutcomeAnalytics {
+  total_outcomes: number;
+  by_tier: Record<string, OutcomeBucket>;
+  by_direction: Record<string, OutcomeBucket>;
+  by_exit_reason: Record<string, OutcomeBucket>;
+  by_confidence: Record<string, OutcomeBucket>;
+  by_ta_score: Record<string, OutcomeBucket>;
+  by_sentiment_score: Record<string, OutcomeBucket>;
+  by_pattern_score: Record<string, OutcomeBucket>;
+  by_pulse: Record<string, OutcomeBucket>;
+  by_news_verdict: Record<string, OutcomeBucket>;
+  by_levels_adjusted: Record<string, OutcomeBucket>;
+}
+
+export function useOutcomeAnalytics() {
+  return useSWR<OutcomeAnalytics>(
+    "/api/analytics/outcomes",
+    fetcher<OutcomeAnalytics>,
+    { revalidateOnFocus: false },
+  );
+}
+
+export interface PulseDay {
+  date: string;
+  score: number;
+  label: string;
+  breadth_pct: number | null;
+}
+
+export function usePulseHistory(days = 30) {
+  return useSWR<PulseDay[]>(
+    `/api/analytics/pulse-history?days=${days}`,
+    fetcher<PulseDay[]>,
+    { revalidateOnFocus: false },
+  );
+}
+
+// ── Backtest ──────────────────────────────────────────────────────────────────
+
+export interface BacktestParams {
+  start?: string;
+  end?: string;
+  top_n: number;
+  min_confidence: number;
+  sample: number;
+  exit_mode: "intrabar" | "close";
+  long_only: boolean;
+  atr_stop_mult?: number | null;
+  atr_target_mult?: number | null;
+  max_holding_days?: number | null;
+}
+
+export interface BacktestResultSummary {
+  initial_capital: number;
+  final_equity: number;
+  total_return_pct: number;
+  cagr_pct: number;
+  max_drawdown_pct: number;
+  spy_return_pct: number;
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number | null;
+  profit_factor: number | null;
+  avg_win: number | null;
+  avg_loss: number | null;
+  avg_holding_days: number | null;
+  exits_by_reason: Record<string, number>;
+  avg_signals_per_day: number | null;
+  zero_signal_days: number;
+  trading_days: number;
+  avg_pulse: number | null;
+  equity_curve: { date: string; equity: number; spy: number | null }[];
+  params: Record<string, unknown>;
+}
+
+export interface BacktestStatus {
+  running: boolean;
+  stage: string | null;
+  params: Record<string, unknown> | null;
+  started_at: string | null;
+  finished_at: string | null;
+  result: BacktestResultSummary | null;
+  error: string | null;
+}
+
+export function useBacktestStatus(pollWhileRunning: boolean) {
+  return useSWR<BacktestStatus>(
+    "/api/backtest/status",
+    fetcher<BacktestStatus>,
+    {
+      refreshInterval: pollWhileRunning ? 3000 : 0,
+      revalidateOnFocus: false,
+    },
+  );
+}
+
+export async function runBacktest(params: BacktestParams): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/backtest/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error) {
+    throw new Error(json.detail ?? json.error ?? `HTTP ${res.status}`);
+  }
+}
+
 // ── T1 Scans ──────────────────────────────────────────────────────────────────
 
 /**

@@ -3,17 +3,19 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, Settings2 } from "lucide-react";
 import { StatCard } from "@/components/stat-card";
-import { EquityCurveChart } from "@/components/analytics-chart";
 import { TierComparisonChart } from "@/components/tier-comparison";
+import { PulseStrip } from "@/components/pulse-strip";
+import { OutcomeExplorer, ExitTuningCard } from "@/components/outcome-explorer";
+import { BacktestPanel } from "@/components/backtest-panel";
 import {
   updateStrategySettings,
   useAnalyticsSummary,
   useMarketPulse,
-  usePortfolioHistory,
   useStrategySettings,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
+
+type Tab = "performance" | "backtest";
 
 // ── Strategy settings (top-N daily entry cap) ─────────────────────────────────
 
@@ -130,19 +132,18 @@ function StrategySettingsCard() {
   );
 }
 
-export default function AnalyticsPage() {
-  const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: history, isLoading: historyLoading } = usePortfolioHistory(60);
+// ── Performance tab ───────────────────────────────────────────────────────────
 
-  // Real per-tier performance from the backend (trades joined to their
-  // suggestion's tier).
+function PerformanceTab() {
+  const { data: summary, isLoading } = useAnalyticsSummary();
+
   const tierStats = (summary?.tiers ?? []).map((t) => ({
     tier: t.tier as "T1" | "T2",
     winRate: t.win_rate_pct,
     trades: t.closed_trades,
   }));
 
-  if (summaryLoading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center py-24">
         <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
@@ -151,17 +152,16 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="px-4 py-5 max-w-2xl mx-auto space-y-6">
-      <h1 className="text-xl font-bold text-white">Analytics</h1>
-
-      {/* ── Strategy settings ── */}
+    <div className="space-y-6">
       <StrategySettingsCard />
 
-      {/* ── Capital stats ── */}
+      <PulseStrip />
+
+      {/* ── Capital ── */}
       {summary && (
         <section className="space-y-2">
           <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">Capital</h2>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <StatCard
               label="Current Capital"
               value={formatCurrency(summary.capital.current_capital)}
@@ -181,25 +181,18 @@ export default function AnalyticsPage() {
               negative={parseFloat(summary.capital.cumulative_realized_pnl) < 0}
               mono
             />
+            <StatCard
+              label="Unrealized P&L"
+              value={formatCurrency(summary.capital.unrealized_pnl)}
+              positive={parseFloat(summary.capital.unrealized_pnl) >= 0}
+              negative={parseFloat(summary.capital.unrealized_pnl) < 0}
+              mono
+            />
           </div>
         </section>
       )}
 
-      {/* ── Equity curve ── */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">Equity Curve (60d)</h2>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-          {historyLoading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
-            </div>
-          ) : (
-            <EquityCurveChart data={history ?? []} />
-          )}
-        </div>
-      </section>
-
-      {/* ── Trade stats ── */}
+      {/* ── Trade performance ── */}
       {summary && (
         <section className="space-y-2">
           <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">Trade Performance</h2>
@@ -208,7 +201,7 @@ export default function AnalyticsPage() {
               label="Win Rate"
               value={`${summary.trades.win_rate_pct.toFixed(1)}%`}
               positive={summary.trades.win_rate_pct >= 50}
-              negative={summary.trades.win_rate_pct < 50}
+              negative={summary.trades.win_rate_pct < 50 && summary.trades.closed_trades > 0}
             />
             <StatCard
               label="Closed Trades"
@@ -229,32 +222,28 @@ export default function AnalyticsPage() {
           </div>
           {summary.trades.best_trade_pnl && summary.trades.worst_trade_pnl && (
             <div className="grid grid-cols-2 gap-2">
-              <StatCard
-                label="Best Trade"
-                value={formatCurrency(summary.trades.best_trade_pnl)}
-                positive
-                mono
-              />
-              <StatCard
-                label="Worst Trade"
-                value={formatCurrency(summary.trades.worst_trade_pnl)}
-                negative
-                mono
-              />
+              <StatCard label="Best Trade" value={formatCurrency(summary.trades.best_trade_pnl)} positive mono />
+              <StatCard label="Worst Trade" value={formatCurrency(summary.trades.worst_trade_pnl)} negative mono />
             </div>
           )}
         </section>
       )}
 
-      {/* ── Tier comparison ── */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">T1 vs T2 Win Rate</h2>
-        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-          <TierComparisonChart stats={tierStats} />
-        </div>
-      </section>
+      {/* ── Outcome analytics ── */}
+      <OutcomeExplorer />
+      <ExitTuningCard />
 
-      {/* ── Suggestion stats ── */}
+      {/* ── Tier comparison ── */}
+      {tierStats.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">T1 vs T2 Win Rate</h2>
+          <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+            <TierComparisonChart stats={tierStats} />
+          </div>
+        </section>
+      )}
+
+      {/* ── Signal coverage ── */}
       {summary && (
         <section className="space-y-2">
           <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wide">Signal Coverage</h2>
@@ -273,6 +262,38 @@ export default function AnalyticsPage() {
       {summary && (
         <p className="text-center text-xs text-slate-600">As of {summary.as_of}</p>
       )}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function AnalyticsPage() {
+  const [tab, setTab] = useState<Tab>("performance");
+
+  return (
+    <div className="px-4 py-5 max-w-2xl mx-auto space-y-4">
+      <h1 className="text-xl font-bold text-white">Analytics</h1>
+
+      {/* ── Tab bar ── */}
+      <div className="flex rounded-xl bg-slate-800/60 p-1 border border-slate-700 gap-1">
+        {(["performance", "backtest"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "flex-1 py-2 rounded-lg text-sm font-medium transition-colors capitalize",
+              tab === t
+                ? "bg-slate-700 text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-300",
+            )}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "performance" ? <PerformanceTab /> : <BacktestPanel />}
     </div>
   );
 }

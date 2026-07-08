@@ -57,6 +57,37 @@ async def get_market_pulse_endpoint() -> ApiResponse[MarketPulseOut]:
     )
 
 
+# ── GET /analytics/pulse-history ──────────────────────────────────────────────
+
+@router.get("/pulse-history")
+async def get_pulse_history(
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Daily market-pulse history (from market_pulse_log) for the timeline strip."""
+    from datetime import timedelta
+
+    from db.models import MarketPulseLog
+
+    cutoff = date.today() - timedelta(days=min(max(days, 1), 120))
+    rows = (await db.execute(
+        select(MarketPulseLog)
+        .where(MarketPulseLog.pulse_date >= cutoff)
+        .order_by(MarketPulseLog.pulse_date.asc())
+    )).scalars().all()
+
+    data = [
+        {
+            "date": r.pulse_date.isoformat(),
+            "score": r.score,
+            "label": r.label,
+            "breadth_pct": float(r.breadth_pct) if r.breadth_pct is not None else None,
+        }
+        for r in rows
+    ]
+    return {"data": data, "error": None, "timestamp": _ts()}
+
+
 # ── GET /analytics/outcomes ───────────────────────────────────────────────────
 
 @router.get("/outcomes")

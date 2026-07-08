@@ -399,7 +399,9 @@ use the `{ data, error, timestamp }` envelope.
 | `GET /api/portfolio/history?days=` | Snapshot series (equity curve) |
 | `GET /api/analytics/summary` | Capital / trade / per-tier / suggestion stats |
 | `GET /api/analytics/market-pulse` | Today's pulse + entries allowed |
-| `GET /api/analytics/outcomes` | **Outcome analytics** — win rate / avg R / P&L bucketed by every signal variable |
+| `GET /api/analytics/pulse-history?days=` | Daily pulse log (timeline strip) |
+| `GET /api/analytics/outcomes` | **Outcome analytics** — win rate / avg R / MFE / MAE / exit efficiency / post-exit follow-through bucketed by every signal variable |
+| `POST /api/backtest/run` · `GET /api/backtest/status` | **In-browser backtesting** — start a run (409 if one is active), poll for progress/result. Runs in a worker thread on the web service; sample capped at 250 symbols for memory. Last result held in process memory. |
 | `GET /api/strategy-settings/` · `PUT` | Read/update runtime knobs (top-N) |
 | `GET /api/t1-scans/?days&signal_only` | T1 scan history |
 | `GET /api/t2-scans/?days` · `/count` · `/universe` | T2 scan history · row-count diagnostic · live Stage-0 universe preview |
@@ -417,7 +419,7 @@ Next.js 14 App Router, dark-mode PWA, SWR polling.
 |---|---|
 | `/suggestions` (Signals) | Tabs: **AI Signals** (cards with confidence bar, sub-scores, ATR stop/target, R:R, rationale, Open-Trade button, 🔥 persistence badge + "Repeat picks" strip) · **T1 Scan History** · **T2 Scan History** (tier badges, risk flags, news verdicts) |
 | `/portfolio` | 6-card capital summary (live NAV) · open positions (progress bar stop→entry→target, unrealized P&L, **"Levels updated" badge with struck-through originals**, Sell/Close) · closed trades (P&L, exit reason incl. TIME_EXIT) |
-| `/analytics` | **Strategy card** (editable top-N + live market-pulse row) · capital stats · 60-day equity curve · trade performance · real T1-vs-T2 win rates · signal coverage |
+| `/analytics` | Two tabs. **Performance:** strategy card (editable top-N + live pulse row) · 30-day pulse timeline strip · capital + trade stats · **outcome explorer** (win rate / avg R per bucket of any signal variable) · **exit-tuning card** (MFE/MAE/efficiency/post-exit per exit reason, with auto-generated insights at n≥10) · T1-vs-T2 win rates · signal coverage. **Backtest:** parameter form (dates, top-N, min-confidence, sample, exit mode, long-only, ATR/holding overrides) → run with live progress → results with metrics grid + equity-vs-SPY chart + exit breakdown |
 | `/financials` | Ad-hoc fundamental lookup per ticker |
 
 ---
@@ -425,7 +427,9 @@ Next.js 14 App Router, dark-mode PWA, SWR polling.
 ## 12. Backtesting harness
 
 `backend/backtest/run_backtest.py` — replays history through the **same
-rules** the live system trades. Not deployed; run locally.
+rules** the live system trades. Runs two ways: the CLI below, or from the
+**Analytics → Backtest tab** (which calls `POST /api/backtest/run`; one run
+at a time, sample ≤250, progress polled every 3 s).
 
 ```bash
 make backtest                                   # 2 years, all 501, top-5

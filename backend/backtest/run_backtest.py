@@ -572,6 +572,145 @@ def _mark(ind: dict[str, pd.DataFrame], pos: Position, ts: pd.Timestamp, col: st
     return float(prior.iloc[-1]) if len(prior) else pos.entry_price
 
 
+# ── Summary (shared by CLI report and the API) ────────────────────────────────
+
+def summarize(result: BacktestResult, spy: pd.DataFrame, start: date, end: date) -> dict:
+    """Compute all headline metrics + downsampled equity/SPY series as a dict."""
+    eq = result.equity
+    trades = result.trades
+    initial = float(settings.initial_capital)
+
+    if eq.empty:
+        return {"error": "no equity data produced — check date range / data availability"}
+
+    final = float(eq.iloc[-1])
+    years = max((eq.index[-1] - eq.index[0]).days / 365.25, 1e-9)
+    running_max = eq.cummax()
+
+    spy_in = spy["Close"].loc[(spy.index.date >= start) & (spy.index.date <= end)]
+    spy_ret = (
+        (float(spy_in.iloc[-1]) / float(spy_in.iloc[0]) - 1) * 100 if len(spy_in) > 1 else 0.0
+    )
+
+    wins = [t for t in trades if t.pnl > 0]
+    losses = [t for t in trades if t.pnl <= 0]
+    gross_win = sum(t.pnl for t in wins)
+    gross_loss = -sum(t.pnl for t in losses)
+    by_reason: dict[str, int] = {}
+    for t in trades:
+        by_reason[t.exit_reason] = by_reason.get(t.exit_reason, 0) + 1
+
+    # Downsample equity + normalized SPY to ≤120 points for charting
+    step = max(1, len(eq) // 120)
+    eq_ds = eq.iloc[::step]
+    spy_norm = (
+        (spy_in / float(spy_in.iloc[0]) * initial) if len(spy_in) else pd.Series(dtype=float)
+    )
+    series = []
+    for ts, v in eq_ds.items():
+        s_val = spy_norm.asof(ts) if len(spy_norm) else None
+        series.append({
+            "date": ts.date().isoformat(),
+            "equity": round(float(v), 2),
+            "spy": round(float(s_val), 2) if s_val is not None and pd.notna(s_val) else None,
+        })
+
+    sig = result.daily_signals
+    pl = result.daily_pulse
+    return {
+        "initial_capital": initial,
+        "final_equity": round(final, 2),
+        "total_return_pct": round((final / initial - 1) * 100, 2),
+        "cagr_pct": round(((final / initial) ** (1 / years) - 1) * 100, 2),
+        "max_drawdown_pct": round(float(((eq - running_max) / running_max).min()) * 100, 2),
+        "spy_return_pct": round(spy_ret, 2),
+        "trades": len(trades),
+        "wins": len(wins),
+        "losses": len(losses),
+        "win_rate_pct": round(100 * len(wins) / len(trades), 1) if trades else None,
+        "profit_factor": round(gross_win / gross_loss, 2) if gross_loss > 0 else None,
+        "avg_win": round(gross_win / len(wins), 2) if wins else None,
+        "avg_loss": round(-gross_loss / len(losses), 2) if losses else None,
+        "avg_holding_days": round(sum(t.holding_days for t in trades) / len(trades), 1)
+        if trades else None,
+        "exits_by_reason": by_reason,
+        "avg_signals_per_day": round(sum(sig) / len(sig), 1) if sig else None,
+        "zero_signal_days": sum(1 for s in sig if s == 0) if sig else 0,
+        "trading_days": len(sig),
+        "avg_pulse": round(sum(pl) / len(pl)) if pl else None,
+        "equity_curve": series,
+    }
+
+
+# ── Programmatic entry point (used by the API) ────────────────────────────────
+
+def run_backtest_programmatic(
+    start: date,
+    end: date,
+    top_n: int = 5,
+    min_confidence: int = 63,
+    sample: int = 150,
+    exit_mode: str = "intrabar",
+    long_only: bool = True,
+    overrides: dict | None = None,
+    progress=None,
+) -> dict:
+    """
+    Run a full backtest and return the summary dict (metrics + chart series).
+
+    overrides: {settings attribute: value} applied for the duration of the run
+    (e.g. {"atr_stop_mult": 2.0, "max_holding_days": 21}) and restored after.
+    progress: optional callable(str) receiving stage descriptions.
+    NOT thread-safe with respect to settings — callers must serialize runs.
+    """
+    def _p(msg: str) -> None:
+        log.info("backtest: %s", msg)
+        if progress:
+            progress(msg)
+
+    saved: dict = {}
+    try:
+        for key, value in (overrides or {}).items():
+            if not hasattr(settings, key):
+                raise ValueError(f"unknown settings override: {key}")
+            saved[key] = getattr(settings, key)
+            setattr(settings, key, value)
+
+        symbols = [s for s, _, _ in TIER1_STOCKS]
+        if sample and sample < len(symbols):
+            step = max(1, len(symbols) // sample)
+            symbols = symbols[::step][:sample]
+
+        _p(f"downloading price history for {len(symbols)} symbols…")
+        data = load_data(symbols + [settings.regime_symbol], start, end)
+        spy = data.pop(settings.regime_symbol, None)
+        if spy is None or spy.empty:
+            return {"error": "no SPY data — cannot compute regime/pulse"}
+
+        _p(f"computing indicators for {len(data)} symbols…")
+        ind = {s: compute_indicators(df) for s, df in data.items() if len(df) >= 60}
+
+        _p("simulating day by day…")
+        result = run_simulation(
+            ind, spy, start, end,
+            top_n=top_n, min_confidence=min_confidence,
+            exit_mode=exit_mode, long_only=long_only,
+        )
+
+        _p("summarizing…")
+        summary = summarize(result, spy, start, end)
+        summary["params"] = {
+            "start": start.isoformat(), "end": end.isoformat(),
+            "top_n": top_n, "min_confidence": min_confidence,
+            "sample": sample, "exit_mode": exit_mode, "long_only": long_only,
+            "overrides": overrides or {},
+        }
+        return summary
+    finally:
+        for key, value in saved.items():
+            setattr(settings, key, value)
+
+
 # ── Reporting ─────────────────────────────────────────────────────────────────
 
 def report(result: BacktestResult, spy: pd.DataFrame, start: date, end: date,

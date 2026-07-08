@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from api.routes import (
     analytics,
+    backtest,
     financials,
     paper_trades,
     portfolio,
@@ -53,6 +54,7 @@ app.include_router(t2_scans.router,     prefix="/api/t2-scans",      tags=["t2-s
 app.include_router(prices.router,       prefix="/api/prices",        tags=["prices"])
 app.include_router(financials.router,   prefix="/api/financials",    tags=["financials"])
 app.include_router(strategy_settings.router, prefix="/api/strategy-settings", tags=["strategy-settings"])
+app.include_router(backtest.router,     prefix="/api/backtest",      tags=["backtest"])
 
 
 # ── Global exception handler — keeps the { data, error, timestamp } envelope ─
