@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # exceeded this fraction — large caps tend to mean-revert after a big
     # one-day pop, so entering the next morning chases an extended move.
     # 0 disables. Value set from backtest evidence.
-    t1_max_signal_day_gain_pct: float = 0.035
+    t1_max_signal_day_gain_pct: float = 0.025
 
     # Long-only mode: skip SHORT signals entirely. Backtest evidence
     # (2024-07 → 2026-07, 501 stocks): shorts netted ~$0 directly but consumed
