@@ -23,6 +23,7 @@ class AgentInputBundle(BaseModel):
     entry_price: float = 0.0
     avg_volume_20d: float = 0.0
     volume_ratio: float = 0.0
+    day_change_pct: float | None = None   # signal-day close-over-prev-close, as a fraction
 
 
 class ScannerOutput(BaseModel):

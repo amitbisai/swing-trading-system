@@ -111,6 +111,12 @@ async def run_scanner() -> tuple[list[ScannerOutput], list[AgentInputBundle]]:
             today_vol = float(latest["Volume"])
             ratio     = round(today_vol / avg_vol, 2) if avg_vol > 0 else 0.0
 
+            day_chg = None
+            if len(df) >= 2:
+                prev_close = float(df["Close"].iloc[-2])
+                if prev_close > 0:
+                    day_chg = round((price - prev_close) / prev_close, 4)
+
             outputs.append(ScannerOutput(
                 symbol=symbol, tier=TradeTier.T1,
                 avg_volume_20d=round(avg_vol, 0),
@@ -120,6 +126,7 @@ async def run_scanner() -> tuple[list[ScannerOutput], list[AgentInputBundle]]:
                 symbol=symbol, tier=TradeTier.T1, as_of_date=today,
                 entry_price=round(price, 4),
                 avg_volume_20d=round(avg_vol, 0), volume_ratio=ratio,
+                day_change_pct=day_chg,
             ))
         except Exception as exc:
             logger.warning("Scanner: T1 %s build failed — %s", symbol, exc)
@@ -140,6 +147,7 @@ async def run_scanner() -> tuple[list[ScannerOutput], list[AgentInputBundle]]:
                 entry_price=round(meta.price, 4),
                 avg_volume_20d=round(meta.avg_volume_30d, 0),
                 volume_ratio=round(meta.rvol, 2),
+                day_change_pct=round(meta.today_change_pct / 100, 4),  # T2 stores %
             ))
         except Exception as exc:
             logger.warning("Scanner: T2 %s build failed — %s", symbol, exc)

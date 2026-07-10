@@ -30,6 +30,7 @@ from agents.models import (
     SentimentOutput,
     SynthesisOutput,
     TAOutput,
+    TradeTier,
 )
 from config import settings
 from db.models import Suggestion
@@ -191,6 +192,22 @@ async def run_synthesizer(
         # Long-only mode (backtest-validated): shorts added no edge and
         # crowded out winning longs from the daily entry slots.
         if settings.long_only and direction == Direction.SHORT:
+            continue
+
+        # Spike filter (XOM lesson): a T1 large-cap that just popped hard in
+        # one day tends to mean-revert — entering next morning chases the top.
+        if (
+            settings.t1_max_signal_day_gain_pct > 0
+            and bundle.tier == TradeTier.T1
+            and direction == Direction.LONG
+            and bundle.day_change_pct is not None
+            and bundle.day_change_pct > settings.t1_max_signal_day_gain_pct
+        ):
+            logger.info(
+                "Synthesizer: %s skipped — signal-day gain %.1f%% exceeds spike filter (%.1f%%)",
+                bundle.symbol, bundle.day_change_pct * 100,
+                settings.t1_max_signal_day_gain_pct * 100,
+            )
             continue
 
         if confidence < _MIN_CONFIDENCE:

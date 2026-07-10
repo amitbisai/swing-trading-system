@@ -130,6 +130,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     out["sma20"] = close.rolling(20).mean()
     out["sma50"] = close.rolling(50, min_periods=20).mean()
+    out["day_chg"] = close.pct_change()
     out["close"] = close
     out["open"] = open_
     out["high"] = high
@@ -522,6 +523,14 @@ def run_simulation(
                 if long_only and direction == "SHORT":
                     continue
                 if conf < min_confidence:
+                    continue
+                # Spike filter — mirror of the synthesizer's T1 gate
+                if (
+                    settings.t1_max_signal_day_gain_pct > 0
+                    and direction == "LONG"
+                    and np.isfinite(row["day_chg"])
+                    and row["day_chg"] > settings.t1_max_signal_day_gain_pct
+                ):
                     continue
                 c = float(row["close"])
                 atr = float(row["atr"])
