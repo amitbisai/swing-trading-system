@@ -572,9 +572,12 @@ backtests (2024-07 → 2026-07, intrabar exits):
 | **Long-only** | **+32.5 %, maxDD −10.3 %, PF 1.26** | **adopted (`LONG_ONLY=true`)** — shorts netted ~$0 directly but consumed slots/budget from winning longs |
 | Long-only + 2.5×ATR stops | +26.1 %, win rate 50.9 % | rejected — higher win rate but lower return (bigger risk/share → smaller positions) |
 | Long-only + 21-day time exit | +27.3 % | rejected — 14 days better |
+| Long-only + **spike filter 3.5 %** | +31.3 %, maxDD −9.15 %, WR 43.9 % | **adopted** (`T1_MAX_SIGNAL_DAY_GAIN_PCT=0.035`) — costs ~1.2 pts of return but cuts drawdown 11 % and lifts win rate; better risk-adjusted (XOM post-mortem, 2026-07-10) |
 | SPY buy & hold (benchmark) | +36.8 %, deeper drawdown | system trades ~4 pts of return for roughly half the drawdown |
 
 Earlier design lessons encoded in code:
+- **XOM** (bought the morning after a +3.9 % pop; move mean-reverted, −1.06R) → T1 spike filter.
+- **SEM** (Yahoo data frozen for a week; screener signalled at a stale price) → data-freshness gates in both scanners.
 - **AMBA** (earnings gap −20 %) → 8-day earnings gates (T2 stage 2, T1 synthesizer).
 - **BEAM** (high RVOL on a selloff) → falling-knife filter (reject >3 % down days).
 - **LEGN** (stale static list) → live Yahoo universe for T2.
