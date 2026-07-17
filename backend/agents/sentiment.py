@@ -30,6 +30,7 @@ Fallback behaviour
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -41,6 +42,14 @@ from config import settings
 from data.finnhub import get_all_headlines
 
 logger = logging.getLogger(__name__)
+
+# Chunked scoring: one mega-call with ~500 stocks proved fragile in production
+# (run died at this step nightly from 2026-07-10 to 2026-07-16, and 500 scores
+# also exceed a 4096-token response). Bounded chunks keep each request small,
+# fully parseable, and individually fallback-safe.
+_CHUNK_SIZE = 100
+_CHUNK_TIMEOUT = 120.0   # seconds per Claude call
+_CHUNK_MAX_TOKENS = 2048  # 100 scores ≈ 1000 tokens — generous headroom
 
 
 async def run_sentiment_batch(bundles: list[AgentInputBundle]) -> list[SentimentOutput]:
@@ -72,78 +81,44 @@ async def run_sentiment_batch(bundles: list[AgentInputBundle]) -> list[Sentiment
         len(stocks_with_news), len(symbols), settings.llm_model,
     )
 
-    # ── 2. Build Claude batch prompt ───────────────────────────────────────────
-    news_block = "\n\n".join(
-        f"[{sym}]\n" + "\n".join(f"- {h}" for h in hl)
-        for sym, hl in stocks_with_news.items()
-    )
-
-    prompt = (
-        "You are a financial news sentiment analyst specialising in short-term swing trading.\n"
-        "For each stock ticker listed below, read the provided headlines and assign an integer "
-        "sentiment score from 0 to 100:\n"
-        "  0-30  = bearish   (negative earnings, guidance cut, regulatory risk, downgrade)\n"
-        "  31-49 = mildly bearish / uncertain\n"
-        "  50    = neutral / no clear signal\n"
-        "  51-69 = mildly bullish / positive\n"
-        "  70-100 = bullish  (beat + raise, major upgrade, strong guidance, catalyst)\n\n"
-        "Scoring factors (swing-trade relevant, 1-2 week horizon):\n"
-        "  - Earnings surprise (beat/miss vs estimate)\n"
-        "  - Forward guidance revision (raised/lowered)\n"
-        "  - Analyst rating changes (upgrade/downgrade, price target)\n"
-        "  - Regulatory/legal actions\n"
-        "  - Macro exposure (sector tailwinds/headwinds)\n"
-        "  - Management changes, M&A rumours\n\n"
-        "Return ONLY a valid JSON object mapping each ticker to its integer score. "
-        "No explanation, no markdown fences, no extra text.\n"
-        'Example: {"AAPL": 72, "TSLA": 38, "NVDA": 65}\n\n'
-        f"{news_block}"
-    )
-
-    # ── 3. Claude batch call ───────────────────────────────────────────────────
-    raw_scores: dict[str, int] = {}
+    # ── 2 + 3. Score in bounded chunks ─────────────────────────────────────────
     llm = ChatAnthropic(
         model=settings.llm_model,
         api_key=settings.anthropic_api_key,
-        max_tokens=4096,   # 149 stocks × ~15 chars/entry needs ~2200+ tokens
+        max_tokens=_CHUNK_MAX_TOKENS,
     )
 
-    raw_text = ""
-    try:
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        raw_text = str(response.content).strip()
-        logger.debug("Sentiment: Claude raw response (first 500 chars): %.500s", raw_text)
+    items = list(stocks_with_news.items())
+    chunks = [
+        dict(items[i : i + _CHUNK_SIZE]) for i in range(0, len(items), _CHUNK_SIZE)
+    ]
 
-        # Strip markdown code fences if the model wraps the JSON
-        text = raw_text
-        if "```" in text:
-            parts = text.split("```")
-            for part in parts:
-                candidate = part.strip()
-                if candidate.startswith("json"):
-                    candidate = candidate[4:].strip()
-                try:
-                    raw_scores = json.loads(candidate)
-                    break
-                except json.JSONDecodeError:
-                    continue
-            if not raw_scores:
-                # Last resort: try the full text
-                raw_scores = json.loads(text)
-        else:
-            raw_scores = json.loads(text)
+    raw_scores: dict[str, int] = {}
+    for idx, chunk in enumerate(chunks, 1):
+        try:
+            chunk_scores = await asyncio.wait_for(
+                _score_chunk(llm, chunk), timeout=_CHUNK_TIMEOUT
+            )
+            raw_scores.update(chunk_scores)
+            logger.info(
+                "Sentiment: chunk %d/%d scored %d/%d symbols",
+                idx, len(chunks), len(chunk_scores), len(chunk),
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "Sentiment: chunk %d/%d timed out (>%ds) — its %d symbols default to 50",
+                idx, len(chunks), int(_CHUNK_TIMEOUT), len(chunk),
+            )
+        except Exception as exc:
+            logger.error(
+                "Sentiment: chunk %d/%d failed — its %d symbols default to 50: %s",
+                idx, len(chunks), len(chunk), exc,
+            )
 
-        logger.info(
-            "Sentiment: Claude scored %d/%d stocks that had news",
-            len(raw_scores), len(stocks_with_news),
-        )
-    except json.JSONDecodeError as exc:
-        logger.error(
-            "Sentiment: JSON parse failed — Claude response was: %.500s | error: %s",
-            raw_text, exc,
-        )
-    except Exception as exc:
-        logger.error("Sentiment: Claude batch call failed: %s", exc, exc_info=True)
+    logger.info(
+        "Sentiment: Claude scored %d/%d stocks that had news (%d chunk(s))",
+        len(raw_scores), len(stocks_with_news), len(chunks),
+    )
 
     # ── 4. Assemble SentimentOutput for every bundle ───────────────────────────
     outputs: list[SentimentOutput] = []
@@ -171,6 +146,51 @@ async def run_sentiment_batch(bundles: list[AgentInputBundle]) -> list[Sentiment
         with_real_score, len(bundles), len(bundles) - len(stocks_with_news),
     )
     return outputs
+
+
+# ── Chunk scoring helper ──────────────────────────────────────────────────────
+
+async def _score_chunk(llm: ChatAnthropic, chunk: dict[str, list[str]]) -> dict[str, int]:
+    """Score one chunk of {symbol: headlines}. Raises on failure (caller handles)."""
+    news_block = "\n\n".join(
+        f"[{sym}]\n" + "\n".join(f"- {h}" for h in hl) for sym, hl in chunk.items()
+    )
+    prompt = (
+        "You are a financial news sentiment analyst specialising in short-term swing trading.\n"
+        "For each stock ticker listed below, read the provided headlines and assign an integer "
+        "sentiment score from 0 to 100:\n"
+        "  0-30  = bearish   (negative earnings, guidance cut, regulatory risk, downgrade)\n"
+        "  31-49 = mildly bearish / uncertain\n"
+        "  50    = neutral / no clear signal\n"
+        "  51-69 = mildly bullish / positive\n"
+        "  70-100 = bullish  (beat + raise, major upgrade, strong guidance, catalyst)\n\n"
+        "Scoring factors (swing-trade relevant, 1-2 week horizon):\n"
+        "  - Earnings surprise (beat/miss vs estimate)\n"
+        "  - Forward guidance revision (raised/lowered)\n"
+        "  - Analyst rating changes (upgrade/downgrade, price target)\n"
+        "  - Regulatory/legal actions\n"
+        "  - Macro exposure (sector tailwinds/headwinds)\n"
+        "  - Management changes, M&A rumours\n\n"
+        "Return ONLY a valid JSON object mapping each ticker to its integer score. "
+        "No explanation, no markdown fences, no extra text.\n"
+        'Example: {"AAPL": 72, "TSLA": 38, "NVDA": 65}\n\n'
+        f"{news_block}"
+    )
+
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    raw_text = str(response.content).strip()
+
+    # Strip markdown code fences if the model wraps the JSON
+    if "```" in raw_text:
+        for part in raw_text.split("```"):
+            candidate = part.strip()
+            if candidate.startswith("json"):
+                candidate = candidate[4:].strip()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+    return json.loads(raw_text)
 
 
 # ── Legacy single-stock shim (kept for backward compatibility) ─────────────────
