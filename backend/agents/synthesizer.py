@@ -253,7 +253,10 @@ async def run_synthesizer(
     # (T2 candidates were already gated inside the screener.) Applied before
     # the cap so a dropped name's slot backfills with the next candidate.
     if settings.t1_min_earnings_days > 0 and candidates:
-        from agents.models import TradeTier
+        # NOTE: TradeTier comes from the module-level import. A function-local
+        # re-import here shadows the name for the WHOLE function scope and made
+        # the spike filter above crash with UnboundLocalError (broke every
+        # nightly run 2026-07-10 → 07-17).
         from risk.entry_guards import get_days_to_earnings
 
         to_check = [
