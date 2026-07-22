@@ -509,8 +509,15 @@ Things that exist and run but have no UI surface:
 9. **Backtest harness** — local CLI only.
 10. **`app_settings` runtime store** — generic key-value; only top-N is
     currently exposed in the UI.
-11. **Idempotent upserts everywhere** (DailyPnL, snapshots, pulse log) — the
-    hourly and nightly jobs can overlap or re-run without duplicates.
+11. **Idempotent upserts everywhere** (DailyPnL, snapshots, pulse log, and —
+    since 2026-07-22 — suggestions themselves: upsert on (symbol, as_of_date),
+    never delete, because trade-referenced suggestion rows are FK-protected).
+12. **Telegram heartbeat** (`backend/notify.py`): the nightly job sends ✅
+    (signal count, T1/T2 split, top-5) or ❌ (error) after every run; the
+    hourly job alerts on crashes and summarizes entry/exit activity. No
+    message by ~4 AM IST = the process was killed outright. No-ops safely
+    when TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are unset. The ingest service
+    is excluded (its Docker image lacks the notify module).
 12. **Fail-open philosophy** — regime/pulse/earnings/breadth checks degrade
     to permissive defaults on data-source outages (logged as warnings), so a
     yfinance hiccup throttles rather than halts the system.
