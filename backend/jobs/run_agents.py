@@ -51,6 +51,8 @@ log = logging.getLogger("run_agents")
 async def main() -> None:
     from datetime import date
 
+    from notify import send_telegram
+
     log.info("=" * 60)
     log.info("Nightly agents run starting")
     log.info("=" * 60)
@@ -59,6 +61,11 @@ async def main() -> None:
         suggestions = await run_orchestrator()
     except Exception as exc:
         log.error("Orchestrator failed: %s", exc, exc_info=True)
+        await send_telegram(
+            f"❌ <b>Nightly agents run FAILED</b>\n"
+            f"Orchestrator error: <code>{str(exc)[:500]}</code>\n"
+            f"Check the Railway agents Cron Runs log."
+        )
         sys.exit(1)
 
     print()
@@ -99,12 +106,42 @@ async def main() -> None:
             "(AUTO_ENTRY_MODE=intraday) — trades will open at live prices next market morning"
         )
 
+    eod_note = "EOD ✅"
     try:
         await process_eod(today)
         log.info("Paper trading: EOD processing + portfolio snapshot complete")
     except Exception as exc:
         log.error("process_eod failed: %s", exc, exc_info=True)
+        eod_note = f"EOD ❌ ({str(exc)[:120]})"
+
+    # ── Heartbeat: success summary to Telegram ────────────────────────────────
+    # If neither ✅ nor ❌ arrives by ~4 AM IST, the process was killed outright.
+    t1_n = sum(1 for s in suggestions if s.tier.value == "T1")
+    t2_n = len(suggestions) - t1_n
+    top = ", ".join(
+        f"{s.symbol} {s.confidence_score}"
+        for s in sorted(suggestions, key=lambda x: -x.confidence_score)[:5]
+    ) or "none"
+    await send_telegram(
+        f"✅ <b>Nightly run complete — {today}</b>\n"
+        f"Signals: {len(suggestions)} ({t1_n} T1, {t2_n} T2)\n"
+        f"Top: {top}\n"
+        f"{eod_note}"
+    )
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except SystemExit:
+        raise
+    except Exception as exc:
+        # Last-resort alert for crashes outside the guarded sections
+        try:
+            from notify import send_telegram
+            asyncio.run(send_telegram(
+                f"❌ <b>Nightly agents job CRASHED</b>\n<code>{str(exc)[:500]}</code>"
+            ))
+        except Exception:
+            pass
+        raise

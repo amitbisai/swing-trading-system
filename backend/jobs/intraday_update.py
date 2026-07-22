@@ -416,6 +416,27 @@ async def main(force: bool = False) -> None:
         opened, closed, len(prices),
     )
 
+    # Notify only when something actually happened (no hourly noise)
+    if opened or closed:
+        from notify import send_telegram
+        await send_telegram(
+            f"🟢 <b>Intraday update — {today}</b>\n"
+            f"Opened: {opened} · Closed: {closed} · Open positions tracked: {len(open_syms) + opened - closed}"
+        )
+
 
 if __name__ == "__main__":
-    asyncio.run(main(force="--force" in sys.argv))
+    try:
+        asyncio.run(main(force="--force" in sys.argv))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        # Last-resort alert — notifications must never mask the real failure
+        try:
+            from notify import send_telegram
+            asyncio.run(send_telegram(
+                f"❌ <b>Intraday job CRASHED</b>\n<code>{str(exc)[:500]}</code>"
+            ))
+        except Exception:
+            pass
+        raise
