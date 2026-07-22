@@ -21,7 +21,8 @@ from decimal import Decimal
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
-from sqlalchemy import delete, update
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from agents.models import (
     AgentInputBundle,
@@ -316,31 +317,45 @@ async def _persist_suggestions(
         return
 
     async with async_session_factory() as session:
-        # Re-running the orchestrator today is idempotent — delete first
-        # (safe because today's suggestions can't have paper trades yet)
-        await session.execute(delete(Suggestion).where(Suggestion.as_of_date == as_of))
+        # Idempotent re-run strategy: UPSERT on (symbol, as_of_date), never
+        # DELETE. Under intraday auto-entry, today's suggestions can already
+        # be referenced by paper_trades (FK RESTRICT) — a delete crashed the
+        # 2026-07-20 nightly run. Rows from an earlier run today that are NOT
+        # re-selected are deactivated instead of removed.
+        await session.execute(
+            update(Suggestion)
+            .where(Suggestion.as_of_date == as_of)
+            .values(is_active=False)
+        )
 
         for s in suggestions:
-            session.add(
-                Suggestion(
-                    symbol=s.symbol,
-                    tier=s.tier.value,
-                    direction=s.direction.value,
-                    confidence_score=s.confidence_score,
-                    entry_price=Decimal(str(round(s.entry_price, 4))),
-                    stop_loss=Decimal(str(round(s.stop_loss, 4))),
-                    target_price=Decimal(str(round(s.target_price, 4))),
-                    rationale=s.rationale,
-                    as_of_date=s.as_of_date,
-                    ta_score=s.ta_score,
-                    sentiment_score=s.sentiment_score,
-                    pattern_score=s.pattern_score,
-                    is_active=active,
+            values = dict(
+                symbol=s.symbol,
+                tier=s.tier.value,
+                direction=s.direction.value,
+                confidence_score=s.confidence_score,
+                entry_price=Decimal(str(round(s.entry_price, 4))),
+                stop_loss=Decimal(str(round(s.stop_loss, 4))),
+                target_price=Decimal(str(round(s.target_price, 4))),
+                rationale=s.rationale,
+                as_of_date=s.as_of_date,
+                ta_score=s.ta_score,
+                sentiment_score=s.sentiment_score,
+                pattern_score=s.pattern_score,
+                is_active=active,
+            )
+            stmt = (
+                pg_insert(Suggestion)
+                .values(**values)
+                .on_conflict_do_update(
+                    index_elements=["symbol", "as_of_date"],
+                    set_={k: v for k, v in values.items() if k not in ("symbol", "as_of_date")},
                 )
             )
+            await session.execute(stmt)
 
         await session.commit()
-        logger.info("Persisted %d suggestion(s) for %s", len(suggestions), as_of)
+        logger.info("Persisted %d suggestion(s) for %s (upsert)", len(suggestions), as_of)
 
 
 # ── LLM rationale ─────────────────────────────────────────────────────────────
